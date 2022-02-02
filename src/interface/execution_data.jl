@@ -369,7 +369,6 @@ function handle_dict_execution_group(connection_points, operation_points,
                 "day" => Dict()
             )
             for d in days_iter
-                @show s, y, d
                 group_operation_points =  PowerModelsParallelRoutine.create_group_operation_points(
                     operation_points, timestamps_iter,
                     [s], [y], [d]
