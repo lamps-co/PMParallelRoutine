@@ -80,7 +80,7 @@ end
 ######################################
 
 
-function create_operation_points(gen_scenarios, load_scenarios, group_info, timestamps_iter)
+function create_operation_points(gen_scenarios, load_scenarios, group_info)
     scenarios_ids  = group_info["scenarios_ids"]
     timestamps_ids = group_info["timestamps_ids"]
     timestamps     = gen_scenarios["dates"]
@@ -163,10 +163,7 @@ function _handle_connection_point_info_powermodels(network::Dict, anarede_info::
     return powermodels_info
 end
 
-function create_connection_points(network::Dict, file_border::String)
-    border = Matrix{Any}(CSV.read(file_border, delim = ";", DataFrame)[3:end, :])
-    border[:, 1] = string.(border[:, 1])
-    border[:, 2:end] = parse.(Int, border[:, 2:end])
+function create_connection_points(network::Dict, border::Matrix)
     names_connection_points = unique(border[:, 1])
     connection_points = Dict()
     for name in names_connection_points
@@ -218,7 +215,9 @@ function connection_point_active_injection(connection_point_info, result)
     active_injection = 0.0
     for (i, branch) in connection_point_info
         branch_flow = result["branch"][branch["id"]]["pf"]
-        active_injection += branch_flow*branch["orientation"]
+        if !isnan(branch_flow)
+            active_injection += branch_flow*branch["orientation"]
+        end
     end
     return active_injection
 end
@@ -493,12 +492,11 @@ function read_scenarios(ASPO, instance)
     return gen_scenarios, load_scenarios, operative_rules
 end
 
-function build_connection_points(ASPO, network, timestamps, scenarios_ids)
+function build_connection_points(border, network, timestamps, scenarios_ids)
     # Construct connection point dictionary which will store
     # the maximum injection in each connection point for every
     # scenario, year and day
-    file_border = "data/$ASPO/raw_data/border.csv"
-    connection_points = PowerModelsParallelRoutine.create_connection_points(network, file_border)
+    connection_points = PowerModelsParallelRoutine.create_connection_points(network, border)
     PowerModelsParallelRoutine.create_connection_points_results!(connection_points, timestamps, length(scenarios_ids))
     return connection_points
 end
