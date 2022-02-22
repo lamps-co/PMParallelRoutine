@@ -3,7 +3,8 @@ include("src/PowerModelsParallelRoutine.jl")
 using Dates, CSV, DataFrames, Statistics
 
 ######### Define PowerModels Parameters ###############
-PowerModelsParallelRoutine.PowerModels.silence()      #
+PowerModelsParallelRoutine.PowerModels.silence() 
+     #
 pm_ivr = PowerModelsParallelRoutine.pm_ivr_parameters #
 pm_acr = PowerModelsParallelRoutine.pm_acr_parameters #
 #######################################################
@@ -17,16 +18,52 @@ file_border = "data/$ASPO/raw_data/border.csv"        #
                                                       #
 #                Possible Instances                   #
 #                                                     #
-# instance = "tutorial"    # scenarios: 2,   years:1, days:1   - total number of power flow = 2*1*1*24     =        48   #
+instance = "tutorial"    # scenarios: 2,   years:1, days:1   - total number of power flow = 2*1*1*24     =        48   #
 # instance = "level 1"     # scenarios: 2,   years:1, days:2   - total number of power flow = 2*1*2*24     =        96   #
 # instance = "level 2"     # scenarios: 5,   years:1, days:5   - total number of power flow = 5*1*5*24     =       600   #
 # instance = "level 3"     # scenarios: 10,  years:1, days:10  - total number of power flow = 10*1*10*24   =     2.400   #
 # instance = "level 4"     # scenarios: 20,  years:1, days:61  - total number of power flow = 20*1*61*24   =    29.280   #
 # instance = "level 5"     # scenarios: 50,  years:1, days:181 - total number of power flow = 50*1*181*24  =   210.200   #
-instance = "level 6"     # scenarios: 100, years:1, days:360 - total number of power flow = 100*1*360*24 =   864.000   #
+# instance = "level 6"     # scenarios: 100, years:1, days:360 - total number of power flow = 100*1*360*24 =   864.000   #
 # instance = "final boss"  # scenarios: 200, years:4, days:360 - total number of power flow = 200*4*360*24 = 6.912.000   #
 #                                                     #
 #######################################################
+
+function create_networks_info(ASPO, dates)
+    high_network = PowerModelsParallelRoutine.read_json("data/$ASPO/P/EMS.json")
+    low_network  = PowerModelsParallelRoutine.read_json("data/$ASPO/FP/EMS.json")
+    PowerModelsParallelRoutine._handle_info!(high_network)
+    PowerModelsParallelRoutine._handle_info!(low_network)
+
+    @info("Convergindo Ponta")
+    PowerModelsParallelRoutine.run_model_pm(high_network, pm_ivr)
+    @info("Convergindo Fora Ponta")
+    PowerModelsParallelRoutine.run_model_pm(low_network, pm_ivr)
+    
+    return create_networks_info(high_network, low_network, dates)
+end
+
+function create_networks_info(high_network, low_network, dates)
+    high_hours = [20,20,21,22]
+    low_hours  = [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,23]
+
+    high = Dict(
+        "network" => high_network,
+        "dates" => dates[findall(dt->hour(dt) in high_hours,dates)],
+        "id_tariff" => 2
+    )
+    low = Dict(
+        "network" => low_network,
+        "dates" => dates[findall(dt->hour(dt) in low_hours,dates)],
+        "id_tariff" => 1
+    )
+
+    return Dict(
+        "Ponta" => high,
+        "Fora Ponta" => low,
+    )
+end
+
 
 
 #_--__--__--__--__--__--__--__--__--__--__--__--__--__--__--__--__--__-#
@@ -38,21 +75,15 @@ gen_scenarios, load_scenarios, trash = PowerModelsParallelRoutine.read_scenarios
 
 border = read_border_as_matrix(file_border)
 
-networks_info = PowerModelsParallelRoutine.read_json("data/EMS/networks_info.json")
-PowerModelsParallelRoutine._handle_info!(networks_info["FPS"]["network"])
-PowerModelsParallelRoutine._handle_info!(networks_info["FPU"]["network"])
-PowerModelsParallelRoutine._handle_info!(networks_info["PS"]["network"])
-PowerModelsParallelRoutine._handle_info!(networks_info["PU"]["network"])
+networks_info = create_networks_info(ASPO, all_timestamps)
 
 filter_results = PowerModelsParallelRoutine.create_filter_results(ASPO, network); # 
 
-networks_info["FPS"]["dates"] = networks_info["FPS"]["dates"] .|> DateTime
-networks_info["FPS"]["dates"] = networks_info["FPU"]["dates"] .|> DateTime
-networks_info["FPS"]["dates"] = networks_info["PS"]["dates"]  .|> DateTime
-networks_info["FPS"]["dates"] = networks_info["PU"]["dates"]  .|> DateTime
+networks_info["Fora Ponta"]["dates"] = networks_info["Fora Ponta"]["dates"] .|> DateTime
+networks_info["Ponta"]["dates"]      = networks_info["Ponta"]["dates"] .|> DateTime
 
-lv0_parallel_strategy = build_parallel_strategy(y = true, scen = 10)
-lv1_parallel_strategy = build_parallel_strategy(m = true, h = true)
+lv0_parallel_strategy = build_parallel_strategy(scen = -1)
+lv1_parallel_strategy = build_parallel_strategy(doy = true)
 
 input_data = Dict(
     "gen_scenarios"     => gen_scenarios,
@@ -65,7 +96,7 @@ input_data = Dict(
     "scenarios"         => all_scenarios_ids
 )
 
-function evaluate_pf_scenarios(input_pf_scenarios::Dict)
+function evaluate_pf_scenarios(input_data::Dict)
     gen_scenarios     = input_data["gen_scenarios"]
     load_scenarios    = input_data["load_scenarios"]
     border            = input_data["border"]
@@ -78,16 +109,20 @@ function evaluate_pf_scenarios(input_pf_scenarios::Dict)
     scenarios         = input_data["scenarios"]
 
     dates_dict    = build_dates_dict(dates)
-
+    
+    network = networks_info["Ponta"]["network"]
     connection_points = PowerModelsParallelRoutine.build_connection_points(border, network, dates, scenarios);
 
     for (sig, network_info) in networks_info
-        sig = "FPS"
-        network_info = networks_info[sig]
-    
+        network_info = networks_info["Fora Ponta"]
+        @info("Running Network: $sig")
+        network = network_info["network"]
+
         lv0_dates = network_info["dates"]
         lv0_scenarios = scenarios
-    
+        
+        isempty(lv0_dates) ? continue : nothing
+
         # Dictionary that stores the maximum injection for each scenario, year and day
         lv0_connection_points = PowerModelsParallelRoutine.build_connection_points(border, network, lv0_dates, lv0_scenarios);
     
@@ -98,9 +133,8 @@ function evaluate_pf_scenarios(input_pf_scenarios::Dict)
         lv0_filters = create_filters(lv0_tuples)
     
         for lv0_tup in lv0_tuples  # outside loop
-        
             lv0_tup = lv0_tuples[1]
-    
+            @info("Level 0 Tuple: $lv0_tup")
             lv1_dates      = get_execution_group_dates(lv0_dates_dict, lv0_tup)
             lv1_scenarios  = get_execution_group_scenarios(lv0_scenarios, lv0_tup)
         
@@ -118,7 +152,7 @@ function evaluate_pf_scenarios(input_pf_scenarios::Dict)
             );
     
             # Evaluate all execution groups parallelizing
-            evaluate_execution_groups!(network, execution_groups, pm_acr)
+            evaluate_execution_groups!(network, execution_groups, pm_ivr)
 
             # updating lv1_connection_points
             for (group, eg) in execution_groups
@@ -156,6 +190,7 @@ function update_connection_points!(master_cp, slave_cp, scenarios, years, days)
     end
 end
 
+connection_points = evaluate_pf_scenarios(input_data)
 
 for (sig, network_info) in networks_info
     sig = "FPU"
@@ -224,11 +259,28 @@ for (sig, network_info) in networks_info
 end
 ### FOR EVERY NETWORK IN SET OF NETWORKS
 
-network = PowerModelsParallelRoutine.read_and_converge_network(ASPO, CASE; pm_parameters = pm_ivr);
+
+data = PowerModelsParallelRoutine.read_json("data/EMS/P/EMS.json")
+PowerModelsParallelRoutine._handle_info!(data)
+
+PowerModelsParallelRoutine.run_model_pm(data, pm_ivr)
+
+op = execution_groups[map_egs[1]].operation_points["scenarios"]["1"]["timestamps"][DateTime("2019-01-01T20:00:00")]
+
+PowerModelsParallelRoutine.apply_operation_point!(data, op)
+
+PowerModelsParallelRoutine.run_model_pm(data, pm_acr)
+
+
+
+networks_info["Ponta"]["network"]
+data
+
+
 
 
 lv0_parallel_strategy = build_parallel_strategy(h = true, scen = 1)
-lv1_parallel_strategy = build_parallel_strategy()
+lv1_parallel_strategy = build_parallel_strategy(doy = true)
 
 lv0_dates = timestamps
 lv0_scenarios = scenarios_ids
@@ -335,8 +387,8 @@ function evaluate_execution_groups!(network, execution_groups, pm_parameters)
     return 
 end
 
-function build_parallel_strategy(;y = false, s = false, q = false, m = false, w = false, d = false, dow = false, h = false, cont = false, scen = -1) 
-    return (y = y, s = s, q = q, m = m, w = w, d = d, dow = dow, h = h, cont = cont, scen = scen)
+function build_parallel_strategy(;y = false, s = false, q = false, m = false, w = false, d = false, doy = false, dow = false, h = false, cont = false, scen = -1) 
+    return (y = y, s = s, q = q, m = m, w = w, d = d, doy = doy, dow = dow, h = h, cont = cont, scen = scen)
 end
 
 semester(dt) = Int(ceil(Dates.quarterofyear(dt) / 2))
@@ -375,7 +427,7 @@ function build_dates_dict(dts::Vector{DateTime}) #, additional_info) for conting
     return dates_dict
 end
 
-function create_filters(tuple)
+function create_filters(tuple::Tuple)
 
     filters = Function[]
     if tuple[1] !== nothing
@@ -411,7 +463,7 @@ function create_filters(tuple)
     if tuple[7] !== nothing
         push!(filters, (dt, doy) -> dt["dayofyear"] == doy)
     else
-        push!(filters, (dt, d) -> true)
+        push!(filters, (dt, doy) -> true)
     end
     if tuple[8] !== nothing
         push!(filters, (dt, dow) -> dt["dayofweek"] == dow)
@@ -431,6 +483,11 @@ function create_filters(tuple)
     # end
     return filters
 end
+
+function create_filters(tuples::Vector)
+    return create_filters(tuples[1])
+end
+
 
 set_of_years(dates)      = unique(year.(dates))
 set_of_semesters(dates)  = unique(semester.(dates))
@@ -462,18 +519,18 @@ function set_of_scenarios(scenarios_ids, n_scen_per_group)
 end
 
 function build_execution_group_tuples(network_dates::Vector{DateTime}, scenarios_ids::Vector{Int}, parallel_strategy)
-    (y, s, q, m, w, d, dow, h, cont, scen) = parallel_strategy
+    (y, s, q, m, w, d, doy, dow, h, cont, scen) = parallel_strategy
     Ω_years           = y == true   ? set_of_years(network_dates)          : [nothing]
     Ω_semesters       = s == true   ? set_of_semesters(network_dates)      : [nothing]
     Ω_quartersofyear  = q == true   ? set_of_quartersofyear(network_dates) : [nothing]
     Ω_months          = m == true   ? set_of_months(network_dates)         : [nothing]
     Ω_weeks           = w == true   ? set_of_weeks(network_dates)          : [nothing]
     Ω_days            = d == true   ? set_of_days(network_dates)           : [nothing]
-    Ω_daysofyear      = d == true   ? set_of_daysofyear(network_dates)     : [nothing]
+    Ω_daysofyear      = doy == true   ? set_of_daysofyear(network_dates)     : [nothing]
     Ω_daysofweek      = dow == true ? set_of_daysofweek(network_dates)     : [nothing]
     Ω_hours           = h == true   ? set_of_hour(network_dates)           : [nothing]
 
-    Ω_scenarios       = scen != -1  ? set_of_scenarios(scenarios_ids, scen) : [nothing]
+    Ω_scenarios       = scen != -1  ? set_of_scenarios(scenarios_ids, scen) : [-1]
 
     exec_group_tup = []
     for year in Ω_years, semester in Ω_semesters, quarterofyear in Ω_quartersofyear, month in Ω_months, week in Ω_weeks, day in Ω_days, doy in Ω_daysofyear, dow in Ω_daysofweek, hour in Ω_hours, scen in Ω_scenarios
@@ -494,7 +551,7 @@ end
 
 function get_execution_group_scenarios(scenarios_ids::Vector{Int}, tup_info)
     filter_ids = tup_info[end]
-    return filter_ids === nothing ? scenarios_ids : findall(scen -> scen in filter_ids, scenarios_ids)
+    return filter_ids === -1 ? scenarios_ids : findall(scen -> scen in filter_ids, scenarios_ids)
 end
 
 dates_index_from_dates_dict(dates_dict) = sort([dt["index"] for (k, dt) in dates_dict])

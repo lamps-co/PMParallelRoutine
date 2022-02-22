@@ -48,7 +48,7 @@ function evaluate_pf_group!(network::Dict, execution_group::ExecutionGroup,
                 outputs_iter[t] = run_model_pm(network, filter_results, pm_parameters);
 
                 # verify convergence and re-load original file in non-convergence case
-                network = verify_convergence!(outputs_iter[t], network, original_network)
+                network = verify_convergence!(outputs_iter[t], network, original_network, s, t)
 
                 # unapply system modifications, i.e., contingencies and manouvers
                 unapply_system_modifications!(network, original_network, oper_point["system_modifications"])

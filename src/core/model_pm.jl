@@ -58,7 +58,7 @@ function unapply_system_modifications!(network::Dict, original_network::Dict, op
     _restore_data!(network, original_network, operation_point)
 end
 
-function verify_convergence!(outputs_iter_t, network, original_network)
+function verify_convergence!(outputs_iter_t, network, original_network, s, t)
     if outputs_iter_t["termination_status"] != 1
         @info("Model didn't converge at scenario $s and timestamp $t," *
                             " re-loading original network")
