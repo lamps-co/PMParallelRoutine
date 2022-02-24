@@ -2,3 +2,6 @@ name = "PowerModelsParallelRoutine"
 uuid = "ef216ca1-bb04-4091-bd10-2e03691fa185"
 authors = ["iagochavarry_lampsco "]
 version = "0.0.1"
+
+[deps]
+PowerFlowModule = "e5f00bb2-5d60-45a7-86b0-ca0ac9c639cc"
