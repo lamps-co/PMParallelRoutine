@@ -236,7 +236,7 @@ function handle_max_injection!(current_maximum::Dict,
     return 
 end
 
-function update_connection_points!(connection_points, result, operation_point, timestamp, s)
+function update_connection_points_from_result!(connection_points, result, timestamp, s)
     y = Dates.year(timestamp)
     d = Dates.dayofyear(timestamp)
     
