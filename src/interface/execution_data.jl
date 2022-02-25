@@ -182,13 +182,13 @@ end
 # Manipulate Connection Point Dictionary #
 ##########################################
 
-function create_connection_points_results!(connection_points::Dict, timestamps::Vector{DateTime}, n_scen::Int)
+function create_connection_points_results!(connection_points::Dict, timestamps::Vector{DateTime}, scenarios::Vector)
     years = unique(year.(timestamps))
     days = unique(Dates.dayofyear.(timestamps))
     for (name, connection_point) in connection_points
         connection_point["scenarios"] = Dict()
         max_inj = connection_point
-        for s in 1:n_scen
+        for s in scenarios
             scenario = max_inj["scenarios"]
             scenario["$s"] = Dict(
                 "year" => Dict()
@@ -497,7 +497,7 @@ function build_connection_points(border, network, timestamps, scenarios_ids)
     # the maximum injection in each connection point for every
     # scenario, year and day
     connection_points = PowerModelsParallelRoutine.create_connection_points(network, border)
-    PowerModelsParallelRoutine.create_connection_points_results!(connection_points, timestamps, length(scenarios_ids))
+    PowerModelsParallelRoutine.create_connection_points_results!(connection_points, timestamps, scenarios_ids)
     return connection_points
 end
 

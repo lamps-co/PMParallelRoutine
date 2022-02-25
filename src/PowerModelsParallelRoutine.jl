@@ -1,5 +1,7 @@
 module PowerModelsParallelRoutine
 
+include("../powerflowmodule.jl/src/PowerFlowModule.jl")
+
 using CSV
 using DataFrames
 using Dates
@@ -7,7 +9,6 @@ using JuMP
 using JSON
 using Ipopt
 using Parameters
-using PowerFlowModule
 
 include("interface/structs.jl")
 include("interface/json.jl")

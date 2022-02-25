@@ -1,0 +1,3 @@
+[submodule "powerflowmodule.jl"]
+	path = powerflowmodule.jl
+	url = https://gitlab.com/lampspuc/energisamust-ii/powermodels/powerflowmodule.jl.git
