@@ -21,7 +21,6 @@ function evaluate_pf_scenarios(input_data::Dict)
     connection_points = PowerModelsParallelRoutine.build_connection_points(border, network, dates, scenarios);
 
     for (sig, network_info) in networks_info
-        network_info = networks_info["Fora Ponta"]
         @info("Running Network Info: $sig")
         network       = network_info["network"]
         lv0_dates     = network_info["dates"]
@@ -35,7 +34,6 @@ function evaluate_pf_scenarios(input_data::Dict)
         lv0_tuples            = build_execution_group_tuples(lv0_dates, lv0_scenarios, lv0_parallel_strategy) # escolher a forma de criação dos grupos de execução
     
         for lv0_tup in lv0_tuples  # outside loop
-            lv0_tup = lv0_tuples[1]
             @info("Level 0 Tuple: $lv0_tup")
             lv1_dates      = get_execution_group_dates(lv0_dates_dict, lv0_tup)
             lv1_scenarios  = get_execution_group_scenarios(lv0_scenarios, lv0_tup)
