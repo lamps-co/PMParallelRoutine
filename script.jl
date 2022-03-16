@@ -3,18 +3,31 @@ include("src/PowerModelsParallelRoutine.jl")
 using Dates, CSV, DataFrames, Statistics
 using Distributed
 
+procids = addprocs([("ubuntu@ec2-34-229-1-38.compute-1.amazonaws.com:22", 5), ("ubuntu@ec2-54-234-119-202.compute-1.amazonaws.com:22", 5)], sshflags=`-vvv -i /Users/pedroferraz/Desktop/acmust_lamps.pem`, tunnel=true, exename="julia-1.6.5/bin/julia", dir="/home/ubuntu")
+
+@everywhere procids begin
+    using Pkg
+    cd("PMParallelRoutine")
+    Pkg.activate(".")
+    Pkg.instantiate()
+end
+
+@everywhere procids begin
+    include("src/PowerModelsParallelRoutine.jl")
+end
+
 function handle_processes(command, procs)
     if command
-        addprocs(procs)
-        @everywhere include("src/PowerModelsParallelRoutine.jl")
+        # addprocs(procs)
+        # @everywhere include("src/PowerModelsParallelRoutine.jl")
         return RemoteChannel(()->Channel{Dict}(32));
     end
     return 
 end
 
 # Parallel Parameters
-parallel        = false
-procs           = 5
+parallel        = true
+procs           = 3
 outputs_channel = handle_processes(parallel, procs)
 ###########
 
@@ -40,9 +53,9 @@ file_border = "data/$ASPO/raw_data/border.csv"        #
 #                                                     #
 # instance = "tutorial"    # scenarios: 2,   years:1, days:1   - total number of power flow = 2*1*1*24     =        48   #
 # instance = "level 1"     # scenarios: 2,   years:1, days:2   - total number of power flow = 2*1*2*24     =        96   #
-instance = "level 2"     # scenarios: 5,   years:1, days:5   - total number of power flow = 5*1*5*24     =       600   #
+# instance = "level 2"     # scenarios: 5,   years:1, days:5   - total number of power flow = 5*1*5*24     =       600   #
 # instance = "level 3"     # scenarios: 10,  years:1, days:10  - total number of power flow = 10*1*10*24   =     2.400   #
-# instance = "level 4"     # scenarios: 20,  years:1, days:61  - total number of power flow = 20*1*61*24   =    29.280   #
+instance = "level 4"     # scenarios: 20,  years:1, days:61  - total number of power flow = 20*1*61*24   =    29.280   #
 # instance = "level 5"     # scenarios: 50,  years:1, days:181 - total number of power flow = 50*1*181*24  =   210.200   #
 # instance = "level 6"     # scenarios: 100, years:1, days:360 - total number of power flow = 100*1*360*24 =   864.000   #
 # instance = "final boss"  # scenarios: 200, years:4, days:360 - total number of power flow = 200*4*360*24 = 6.912.000   #
@@ -58,30 +71,18 @@ gen_scenarios, load_scenarios, trash = PowerModelsParallelRoutine.read_scenarios
 
 dates_dict    = build_dates_dict(all_timestamps)
 
-dates_dict[DateTime("2019-01-02T07:00:00")]
-
-parallel_strategy = build_parallel_strategy(scen = 3, d = true)
-
-tuples          = build_execution_group_tuples(all_timestamps, all_scenarios_ids, parallel_strategy) # escolher a forma de criação dos grupos de execução
-
-lv1_dates      = get_execution_group_dates(dates_dict, tuples[1])
-
-lv1_scenarios  = get_execution_group_scenarios(all_scenarios_ids, tuples[1])
-
-
 border = read_border_as_matrix(file_border)
 
 networks_info = create_networks_info(ASPO, all_timestamps)
 
-network, result = PowerModelsParallelRoutine.PowerFlowModule.run_model(networks_info["Fora Ponta"]["network"], Dict("1" => pm_ivr))
+network = networks_info["Fora Ponta"]["network"]
 
 filter_results = PowerModelsParallelRoutine.create_filter_results(ASPO, network); # 
 
 networks_info["Fora Ponta"]["dates"] = networks_info["Fora Ponta"]["dates"] .|> DateTime
 
-lv0_parallel_strategy = build_parallel_strategy(scen = -1)
+lv0_parallel_strategy = build_parallel_strategy(scen = 10)
 lv1_parallel_strategy = build_parallel_strategy(scen = 1)
-
 
 input_data = Dict(
     "gen_scenarios"     => gen_scenarios,
@@ -95,24 +96,18 @@ input_data = Dict(
     "model_hierarchy"   => Dict("1" => pm_acr_s, "2"=>pm_ivr_s),
     "parallelize"       => Dict(
         "command"         => parallel,
-        "procs"           => 5,
+        "procs"           => procs,
         "outputs_channel" => outputs_channel
     )
 )
 
-connection_points = evaluate_pf_scenarios(input_data)
-
-using Distributed
-
-addprocs(5); # add worker processes
-
-@everywhere include("src/PowerModelsParallelRoutine.jl")
-
-@everywhere PowerModelsParallelRoutine.PowerFlowModule.PowerModels.silence() 
+connection_points, time = @timed evaluate_pf_scenarios(input_data)
+# Iago: 4
+# Ferraz: 7
+# Luiz: 8
+############################################################################
 
 const outputs_channel = RemoteChannel(()->Channel{Dict}(32));
-
-
 
 time = @elapsed begin
     @sync @distributed for i in 1:5
