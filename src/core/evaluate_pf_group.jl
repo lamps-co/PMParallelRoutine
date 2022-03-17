@@ -64,6 +64,9 @@ function evaluate_pf_group(network, operating_points, model_hierarchy,
             end
         end
     end
+    Ntimes = length(timestamps) * length(scenarios_ids)
+    @info("Tempo total de execução dos fluxos no worker $(myid()): $execution_time")
+    @info("Tempo médio de execução de $Ntimes fluxos no worker $(myid()): $(execution_time / Ntimes)")
 
     return connection_points
 end

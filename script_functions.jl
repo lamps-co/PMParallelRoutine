@@ -57,6 +57,7 @@ function evaluate_pf_scenarios(input_data::Dict)
                 # Evaluate all execution groups 
                 evaluate_execution_groups!(network, execution_groups, lv1_tuples, model_hierarchy, Dict(), lv1_connection_points)
             end
+
             @info("Updating lv0 Connection Points")
             # update lv0_connection_points
             update_connection_points!(lv0_connection_points, lv1_connection_points)
@@ -78,13 +79,16 @@ end
         parameters, connection_points; logs = logs
     )
     
+    @info("Worker $(myid()): before putting in channel")
     put!(outputs_channel, connection_points)
+    @info("Worker $(myid()): put sucessful")
 end
 
 function retrive_outputs!(outputs_channel, master_cp, n_exec_groups)
     n = 0
     while n < n_exec_groups
         slave_cp = take!(outputs_channel)
+        @info("Worker $(myid()): successfully took from output channel - progress: $n / $n_exec_groups")
         update_connection_points!(master_cp, slave_cp)
         n += 1
     end
@@ -101,8 +105,9 @@ function evaluate_execution_groups_parallel!(network, execution_groups, ex_group
             model_hierarchy,
             parameters,
             execution_groups[ex_group_tuples[i]]["connection_points"],
-            outputs_channel
-            )
+            outputs_channel;
+            logs = false
+        )
     end
     retrive_outputs!(outputs_channel, lv1_connection_points, n_exec_groups)
     return 

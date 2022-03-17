@@ -3,7 +3,10 @@ include("src/PowerModelsParallelRoutine.jl")
 using Dates, CSV, DataFrames, Statistics
 using Distributed
 
-procids = addprocs([("ubuntu@ec2-34-229-1-38.compute-1.amazonaws.com:22", 5), ("ubuntu@ec2-54-234-119-202.compute-1.amazonaws.com:22", 5)], sshflags=`-vvv -i /Users/pedroferraz/Desktop/acmust_lamps.pem`, tunnel=true, exename="julia-1.6.5/bin/julia", dir="/home/ubuntu")
+procids = addprocs([("ubuntu@ec2-54-242-126-173.compute-1.amazonaws.com:22", 5), ("ubuntu@ec2-52-91-97-87.compute-1.amazonaws.com:22", 5)], sshflags=`-vvv -o StrictHostKeyChecking=no -i "~/Dropbox/Prainha/acmust_lamps.pem"`, tunnel=true, exename="julia-1.6.5/bin/julia", dir="/home/ubuntu")
+# procids = addprocs([("ubuntu@ec2-54-242-126-173.compute-1.amazonaws.com:22", 5), ("ubuntu@ec2-52-91-97-87.compute-1.amazonaws.com:22", 5)], sshflags=`-vvv -i /Users/pedroferraz/Desktop/acmust_lamps.pem`, tunnel=true, exename="julia-1.6.5/bin/julia", dir="/home/ubuntu")
+# ssh -i /Users/pedroferraz/Desktop/acmust_lamps.pem ubuntu@ec2-54-242-126-173.compute-1.amazonaws.com
+# ssh -i /Users/pedroferraz/Desktop/acmust_lamps.pem ubuntu@ec2-52-91-97-87.compute-1.amazonaws.com
 
 @everywhere procids begin
     using Pkg
@@ -20,7 +23,7 @@ function handle_processes(command, procs)
     if command
         # addprocs(procs)
         # @everywhere include("src/PowerModelsParallelRoutine.jl")
-        return RemoteChannel(()->Channel{Dict}(32));
+        return RemoteChannel(()->Channel{Dict}(100));
     end
     return 
 end
@@ -81,8 +84,8 @@ filter_results = PowerModelsParallelRoutine.create_filter_results(ASPO, network)
 
 networks_info["Fora Ponta"]["dates"] = networks_info["Fora Ponta"]["dates"] .|> DateTime
 
-lv0_parallel_strategy = build_parallel_strategy(scen = 10)
-lv1_parallel_strategy = build_parallel_strategy(scen = 1)
+lv0_parallel_strategy = build_parallel_strategy(scen = 1)
+lv1_parallel_strategy = build_parallel_strategy(doy = true)
 
 input_data = Dict(
     "gen_scenarios"     => gen_scenarios,
@@ -102,39 +105,3 @@ input_data = Dict(
 )
 
 connection_points, time = @timed evaluate_pf_scenarios(input_data)
-# Iago: 4
-# Ferraz: 7
-# Luiz: 8
-############################################################################
-
-const outputs_channel = RemoteChannel(()->Channel{Dict}(32));
-
-time = @elapsed begin
-    @sync @distributed for i in 1:5
-        @info("Worker $(myid()) receive task $i")
-        @async execute_pf(execution_groups[map_egs[i]], outputs_channel)
-    end
-
-    retrive_outputs!(outputs_channel, connection_points, 5)
-end
-
-connection_points
-
-execute_pf(inputs, outputs_channel)
-
-
-addprocs(2); # add worker processes
-
-@everywhere a(i) = i
-b(i) = 2
-@sync @distributed for i in b.(1:10)
-
-    put!(ch, a(i))
-end
-
-n = 0
-while n != 10
-    r = take!(ch)
-    @show r
-    n += 1
-end
