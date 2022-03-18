@@ -14,13 +14,15 @@ function evaluate_pf_scenarios(input_data::Dict)
     parallelize        = input_data["parallelize"]
     command = parallelize["command"]
     procs   = parallelize["procs"]
-
+    outputs_channel = parallelize["outputs_channel"]
     dates_dict    = build_dates_dict(dates)
     
     network = networks_info["Fora Ponta"]["network"]
     connection_points = PowerModelsParallelRoutine.build_connection_points(border, network, dates, scenarios);
 
     for (sig, network_info) in networks_info
+        sig = "Fora Ponta"
+        network_info = networks_info[sig]
         @info("Running Network Info: $sig")
         network       = network_info["network"]
         lv0_dates     = network_info["dates"]
@@ -34,6 +36,7 @@ function evaluate_pf_scenarios(input_data::Dict)
         lv0_tuples            = build_execution_group_tuples(lv0_dates, lv0_scenarios, lv0_parallel_strategy) # escolher a forma de criação dos grupos de execução
     
         for lv0_tup in lv0_tuples  # outside loop
+            lv0_tup = lv0_tuples[1]
             @info("Level 0 Tuple: $lv0_tup")
             lv1_dates      = get_execution_group_dates(lv0_dates_dict, lv0_tup)
             lv1_scenarios  = get_execution_group_scenarios(lv0_scenarios, lv0_tup)
@@ -50,7 +53,6 @@ function evaluate_pf_scenarios(input_data::Dict)
                 lv1_connection_points, lv1_dates_dict, lv1_dates_indexes,
                 lv1_scenarios, lv1_tuples
             );
-    
             if command
                 evaluate_execution_groups_parallel!(network, execution_groups, lv1_tuples, model_hierarchy, Dict(), lv1_connection_points, outputs_channel)
             else
@@ -68,6 +70,16 @@ function evaluate_pf_scenarios(input_data::Dict)
     end
 
     return connection_points
+end
+
+@everywhere function parallel_pf_dummy(network, operating_points, model_hierarchy, 
+                                  parameters, connection_points, 
+                                  outputs_channel; logs = true)  
+    @info("In worker $(myid()). DUMMY")
+    connection_points = Dict()
+    @info("Worker $(myid()): before putting in channel")
+    put!(outputs_channel, connection_points)
+    @info("Worker $(myid()): put sucessful")
 end
 
 @everywhere function parallel_pf(network, operating_points, model_hierarchy, 
@@ -92,6 +104,24 @@ function retrive_outputs!(outputs_channel, master_cp, n_exec_groups)
         update_connection_points!(master_cp, slave_cp)
         n += 1
     end
+    return 
+end
+
+function evaluate_execution_groups_parallel_dummy!(network, execution_groups, ex_group_tuples, model_hierarchy, parameters, lv1_connection_points, outputs_channel)
+    n_exec_groups = length(ex_group_tuples)
+    @sync @distributed for i = 1:n_exec_groups
+        @info("Executing Group: $(ex_group_tuples[i]) in worker $(myid()). DUMMY!")
+        @async parallel_pf_dummy(
+            network, 
+            execution_groups[ex_group_tuples[i]]["operating_points"],
+            model_hierarchy,
+            parameters,
+            execution_groups[ex_group_tuples[i]]["connection_points"],
+            outputs_channel;
+            logs = false
+        )
+    end
+    retrive_outputs!(outputs_channel, lv1_connection_points, n_exec_groups)
     return 
 end
 
