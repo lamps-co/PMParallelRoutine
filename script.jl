@@ -5,8 +5,8 @@ using Distributed
 
 procids = addprocs([("ubuntu@ec2-3-95-62-135.compute-1.amazonaws.com:22", 5), ("ubuntu@ec2-54-196-149-95.compute-1.amazonaws.com:22", 5)], sshflags=`-vvv -o StrictHostKeyChecking=no -i "~/Dropbox/Prainha/acmust_lamps.pem"`, tunnel=true, exename="julia-1.6.5/bin/julia", dir="/home/ubuntu")
 # procids = addprocs([("ubuntu@ec2-54-242-126-173.compute-1.amazonaws.com:22", 5), ("ubuntu@ec2-52-91-97-87.compute-1.amazonaws.com:22", 5)], sshflags=`-vvv -i /Users/pedroferraz/Desktop/acmust_lamps.pem`, tunnel=true, exename="julia-1.6.5/bin/julia", dir="/home/ubuntu")
-# ssh -i /Users/pedroferraz/Desktop/acmust_lamps.pem ubuntu@ec2-54-242-126-173.compute-1.amazonaws.com
-# ssh -i /Users/pedroferraz/Desktop/acmust_lamps.pem ubuntu@ec2-52-91-97-87.compute-1.amazonaws.com
+# ssh -i /Users/pedroferraz/Desktop/acmust_lamps.pem ubuntu@ec2-3-95-62-135.compute-1.amazonaws.com
+# ssh -i /Users/pedroferraz/Desktop/acmust_lamps.pem ubuntu@ec2-54-196-149-95.compute-1.amazonaws.com
 
 @everywhere procids begin
     using Pkg
@@ -59,9 +59,9 @@ file_border = "data/$ASPO/raw_data/border.csv"        #
 #                Possible Instances                   #
 #                                                     #
 # instance = "tutorial"    # scenarios: 2,   years:1, days:1   - total number of power flow = 2*1*1*24     =        48   #
-instance = "level 1"     # scenarios: 2,   years:1, days:2   - total number of power flow = 2*1*2*24     =        96   #
+# instance = "level 1"     # scenarios: 2,   years:1, days:2   - total number of power flow = 2*1*2*24     =        96   #
 # instance = "level 2"     # scenarios: 5,   years:1, days:5   - total number of power flow = 5*1*5*24     =       600   #
-# instance = "level 3"     # scenarios: 10,  years:1, days:10  - total number of power flow = 10*1*10*24   =     2.400   #
+instance = "level 3"     # scenarios: 10,  years:1, days:10  - total number of power flow = 10*1*10*24   =     2.400   #
 # instance = "level 4"     # scenarios: 20,  years:1, days:61  - total number of power flow = 20*1*61*24   =    29.280   #
 # instance = "level 5"     # scenarios: 50,  years:1, days:181 - total number of power flow = 50*1*181*24  =   210.200   #
 # instance = "level 6"     # scenarios: 100, years:1, days:360 - total number of power flow = 100*1*360*24 =   864.000   #
@@ -89,7 +89,7 @@ filter_results = PowerModelsParallelRoutine.create_filter_results(ASPO, network)
 networks_info["Fora Ponta"]["dates"] = networks_info["Fora Ponta"]["dates"] .|> DateTime
 
 lv0_parallel_strategy = build_parallel_strategy(scen = 1)
-lv1_parallel_strategy = build_parallel_strategy(h = true)
+lv1_parallel_strategy = build_parallel_strategy(doy = true)
 
 input_data = Dict(
     "gen_scenarios"     => gen_scenarios,

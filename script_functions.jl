@@ -21,7 +21,6 @@ function evaluate_pf_scenarios(input_data::Dict)
     connection_points = PowerModelsParallelRoutine.build_connection_points(border, network, dates, scenarios);
 
     for (sig, network_info) in networks_info
-        sig = "Fora Ponta"
         network_info = networks_info[sig]
         @info("Running Network Info: $sig")
         network       = network_info["network"]
@@ -36,7 +35,6 @@ function evaluate_pf_scenarios(input_data::Dict)
         lv0_tuples            = build_execution_group_tuples(lv0_dates, lv0_scenarios, lv0_parallel_strategy) # escolher a forma de criação dos grupos de execução
     
         for lv0_tup in lv0_tuples  # outside loop
-            lv0_tup = lv0_tuples[1]
             @info("Level 0 Tuple: $lv0_tup")
             lv1_dates      = get_execution_group_dates(lv0_dates_dict, lv0_tup)
             lv1_scenarios  = get_execution_group_scenarios(lv0_scenarios, lv0_tup)
@@ -100,9 +98,9 @@ function retrive_outputs!(outputs_channel, master_cp, n_exec_groups)
     n = 0
     while n < n_exec_groups
         slave_cp = take!(outputs_channel)
-        @info("Worker $(myid()): successfully took from output channel - progress: $n / $n_exec_groups")
         update_connection_points!(master_cp, slave_cp)
         n += 1
+        @info("Worker $(myid()): successfully took from output channel - progress: $n / $n_exec_groups")
     end
     return 
 end
@@ -135,8 +133,7 @@ function evaluate_execution_groups_parallel!(network, execution_groups, ex_group
             model_hierarchy,
             parameters,
             execution_groups[ex_group_tuples[i]]["connection_points"],
-            outputs_channel;
-            logs = false
+            outputs_channel
         )
     end
     retrive_outputs!(outputs_channel, lv1_connection_points, n_exec_groups)
