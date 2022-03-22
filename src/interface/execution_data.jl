@@ -116,6 +116,7 @@ function create_operation_points(gen_scenarios, load_scenarios, group_info)
 end
 
 
+
 ######################################
 # Create Connection Point Dictionary #
 ######################################

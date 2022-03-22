@@ -1,6 +1,6 @@
 module PowerModelsParallelRoutine
 
-include("../powerflowmodule.jl/src/PowerFlowModule.jl")
+include("../powerflowmodule.jl/src/NetworkSimulations.jl")
 
 using CSV
 using DataFrames

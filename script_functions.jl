@@ -21,7 +21,6 @@ function evaluate_pf_scenarios(input_data::Dict)
     connection_points = PowerModelsParallelRoutine.build_connection_points(border, network, dates, scenarios);
 
     for (sig, network_info) in networks_info
-        network_info = networks_info[sig]
         @info("Running Network Info: $sig")
         network       = network_info["network"]
         lv0_dates     = network_info["dates"]
@@ -46,13 +45,13 @@ function evaluate_pf_scenarios(input_data::Dict)
             lv1_dates_indexes = dates_index_from_dates_dict(lv1_dates_dict)
             lv1_tuples = build_execution_group_tuples(lv1_dates, lv1_scenarios, lv1_parallel_strategy) # escolher a forma de criação dos grupos de execução
 
-            execution_groups, map_egs   = create_all_execution_groups(
+            execution_groups, map_egs   = create_all_execution_groups_new(
                 gen_scenarios, load_scenarios, filter_results, 
                 lv1_connection_points, lv1_dates_dict, lv1_dates_indexes,
                 lv1_scenarios, lv1_tuples
             );
             if command
-                evaluate_execution_groups_parallel!(network, execution_groups, lv1_tuples, model_hierarchy, Dict(), lv1_connection_points, outputs_channel)
+                tim = @time evaluate_execution_groups_parallel_optimized!(network, execution_groups, lv1_tuples, model_hierarchy, Dict(), lv1_connection_points, outputs_channel)
             else
                 # Evaluate all execution groups 
                 evaluate_execution_groups!(network, execution_groups, lv1_tuples, model_hierarchy, Dict(), lv1_connection_points)
@@ -127,7 +126,7 @@ function evaluate_execution_groups_parallel!(network, execution_groups, ex_group
     n_exec_groups = length(ex_group_tuples)
     @sync @distributed for i = 1:n_exec_groups
         @info("Executing Group: $(ex_group_tuples[i]) in worker $(myid())")
-        @async parallel_pf(
+        parallel_pf(
             network, 
             execution_groups[ex_group_tuples[i]]["operating_points"],
             model_hierarchy,
@@ -140,12 +139,29 @@ function evaluate_execution_groups_parallel!(network, execution_groups, ex_group
     return 
 end
 
+function evaluate_execution_groups_parallel_optimized!(network, execution_groups, ex_group_tuples, model_hierarchy, parameters, lv1_connection_points, outputs_channel)
+    n_exec_groups = length(ex_group_tuples)
+    @sync @distributed for (i, execution_group) in [(i, execution_groups[ex_group_tuples[i]]) for i = 1:n_exec_groups]
+        @info("Executing Group: $(ex_group_tuples[i]) in worker $(myid()). Optimized!!!!")
+        parallel_pf(
+            network, 
+            execution_group["operating_points"],
+            model_hierarchy,
+            parameters,
+            execution_group["connection_points"],
+            outputs_channel
+        )
+    end
+    retrive_outputs!(outputs_channel, lv1_connection_points, n_exec_groups)
+    return 
+end
+
 function create_networks_info(ASPO::String, dates)
     low_network  = PowerModelsParallelRoutine.read_json("data/$ASPO/FP/EMS.json")
     PowerModelsParallelRoutine._handle_info!(low_network)
 
     @info("Convergindo Fora Ponta")
-    low_network, result = PowerModelsParallelRoutine.PowerFlowModule.run_model(low_network, Dict("1" => pm_ivr))
+    low_network, result = PowerModelsParallelRoutine.NetworkSimulations.run_model(low_network, Dict("1" => pm_ivr))
     
     return create_networks_info(low_network, dates)
 end
@@ -457,6 +473,60 @@ function handle_dict_execution_group(lv1_connection_points, operation_points, fi
     return execution_groups, execution_groups_map
 end
 
+function handle_dict_execution_group_new(lv1_connection_points, gen_scenarios, load_scenarios, filter_results,
+                                     lv1_dates, lv1_dates_indexes, lv1_scenarios, tuples)
+    execution_groups = Dict()
+    execution_groups_map = Dict()
+    group_dates_dict = build_dates_dict(lv1_dates)
+
+    gen  = gen_scenarios["values"]
+    ac_load = load_scenarios["values"]
+    re_load = 0.1*load_scenarios["values"]
+
+    for (t, tuple) in enumerate(tuples)
+        group_timestamps = get_execution_group_dates(group_dates_dict, tuple)
+        group_timestamps_indexes = [group_dates_dict[t]["index"] for t in group_timestamps]
+        t_indexes = lv1_dates_indexes[group_timestamps_indexes]
+        s_indexes  = get_execution_group_scenarios(lv1_scenarios, tuple)
+
+        group_operation_points = Dict(
+            "gen" => Dict(), 
+            "load" => Dict(),
+            "dims" => Dict(
+                "timestamps" => group_timestamps,
+                "scenarios" => s_indexes
+            ))
+
+        for (g, gen_id) in enumerate(gen_scenarios["names"])
+            group_operation_points["gen"][gen_id] = Dict(
+                "pg" => gen[t_indexes, g, s_indexes]
+                )
+        end
+
+        for (l, load_id) in enumerate(load_scenarios["names"])
+            group_operation_points["load"][load_id] = Dict(
+                "pd" => ac_load[t_indexes, l, s_indexes],
+                "qd" => re_load[t_indexes, l, s_indexes],
+            )
+        end
+
+
+        years = unique(year.(group_timestamps))
+        days = unique(dayofyear.(group_timestamps))
+        group_connection_point = PowerModelsParallelRoutine.create_group_connection_points(lv1_connection_points, s_indexes, years, days)
+
+        execution_group   = Dict(
+            "operating_points" => group_operation_points, 
+            "parameters" =>Dict("filter_results" => filter_results), 
+            "connection_points" => group_connection_point
+        )
+
+        execution_groups[tuple] = execution_group
+        execution_groups_map[t] = tuple
+    end
+    return execution_groups, execution_groups_map
+end
+
 function create_all_execution_groups(gen_scenarios::Dict, load_scenarios::Dict, 
                                      filter_results::Dict, lv1_connection_points::Dict,
                                      lv1_dates_dict::Dict, lv1_dates_indexes::Vector, 
@@ -476,5 +546,18 @@ function create_all_execution_groups(gen_scenarios::Dict, load_scenarios::Dict,
     return handle_dict_execution_group(
         lv1_connection_points, operation_points, filter_results,
         lv1_dates, lv1_scenarios, lv1_tuples
+    )
+end
+
+function create_all_execution_groups_new(gen_scenarios::Dict, load_scenarios::Dict, 
+                                     filter_results::Dict, lv1_connection_points::Dict,
+                                     lv1_dates_dict::Dict, lv1_dates_indexes::Vector, 
+                                     lv1_scenarios::Vector, lv1_tuples::Vector)
+
+    lv1_dates = sort(get_timestamps_keys(lv1_dates_dict))
+
+    return handle_dict_execution_group_new(
+        lv1_connection_points, gen_scenarios, load_scenarios, filter_results,
+        lv1_dates, lv1_dates_indexes, lv1_scenarios, lv1_tuples
     )
 end

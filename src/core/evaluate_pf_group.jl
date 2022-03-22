@@ -11,71 +11,51 @@ Inputs:
 Ouputs:
                    
 """
-function evaluate_pf_group(network, operating_points, model_hierarchy, 
-                           parameters, connection_points; logs = true)
-
-     outputs = Dict(
-        "scenarios" => Dict(),
-        "time" => 0
-    )
-
+function evaluate_pf_group(network::Dict, operating_points::Dict, model_hierarchy::Dict, parameters, connection_points; logs = true)
+    operating_points = NetworkSimulations.handle_operating_points!(operating_points)
+    timestamps = operating_points["dims"]["timestamps"]
+    scenarios  = operating_points["dims"]["scenarios"]
+    
     # store the original converged network 
     original_network = deepcopy(network)
 
-    filter_ref = PowerFlowModule.handle_filter_ref(parameters)
+    filter_ref = NetworkSimulations.handle_filter_ref(parameters)
 
-    total_time = 0.0
-    scenarios_ids = PowerFlowModule.get_sorted_scenarios_ids(operating_points)
-    for s in scenarios_ids
-        outputs["scenarios"][s] = Dict(
-            "timestamps" => Dict()
-            )  
-        scenario = operating_points["scenarios"][s]
-        timestamps = PowerFlowModule.get_sorted_timestamps(scenario)
+    pms =  NetworkSimulations.instantiate_pm_models(network, model_hierarchy)
+
+    for (s, scen) in enumerate(scenarios)
         for (t, date) in enumerate(timestamps)
             if logs
-                @info("Evaluating Scenario ($s of $(length(scenarios_ids))) at Timestamps $date ($t of $(length(timestamps)))")
+                @info("Evaluating Scenario: $scen ($s of $(length(scenarios))) - Date: $date ($t of $(length(timestamps)))")
             end
-            outputs_iter = outputs["scenarios"][s]["timestamps"]
-
-            # structure that contains the operation point for this iteration
-            # gen and load scenario and system modifications
-            oper_point = scenario["timestamps"][date]
+            
+            NetworkSimulations.save_start_values!(pms)
+            NetworkSimulations.update_start_value!(pms)
 
             # apply operation point (gen, load and system modifications) into network
-            PowerFlowModule.apply_operation_point!(network, oper_point)
+            NetworkSimulations.apply_operating_point!(pms, network, operating_points, t, s)
             
             # run powermodels power flow algorithm
-            (network, outputs_iter[t]), flowtime = @timed PowerFlowModule.run_model(network, model_hierarchy; filter_ref = filter_ref);
-            total_time += flowtime
-
+            results, flowtime = @timed NetworkSimulations.run_model(pms, network, model_hierarchy; filter_ref = filter_ref);
+            
             # verify convergence and re-load original file in non-convergence case
-            network = PowerFlowModule.verify_convergence!(outputs_iter[t], network, original_network)
+            pms = NetworkSimulations.verify_convergence(pms, original_network, model_hierarchy)
 
-            if outputs_iter[t]["termination_status"] == 1
-                # unapply system modifications, i.e., contingencies and manouvers
-                PowerFlowModule.unapply_system_modifications!(network, original_network, oper_point["system_modifications"])
-
+            if results["termination_status"] == 1
                 # update connection points structure, i.e, for all connection points
                 # verify if the active injection of the current iteration is greater
                 # then the maximum injection so far
-                update_connection_points_from_result!(connection_points, network, date, parse(Int, s))
+                update_connection_points_from_result!(connection_points, results["solution"], date, scen)
             end
-            outputs_iter[t] = Dict()
+
             if logs
-                @info("End of iteration ($s of $(length(scenarios_ids))) at Timestamps $date ($t of $(length(timestamps))): $flowtime seconds")
+                @info("End of iteration ($s of $(length(scenarios))) at Timestamps $date ($t of $(length(timestamps))): $flowtime seconds")
             end
         end
         if logs
-            @info("End of scenario ($s of $(length(scenarios_ids)))")
+            @info("End of scenario ($s of $(length(scenarios)))")
         end
     end
-    @info("End of function")
-    # if logs
-        # Ntimes = length(timestamps) * length(scenarios_ids)
-        # @info("Time of execution for power flow group at worker $(myid()): $total_time")
-        # @info("Mean execution time of $Ntimes power flows at worker $(myid()): $(total_time / Ntimes)")
-    # end
 
     return connection_points
 end
