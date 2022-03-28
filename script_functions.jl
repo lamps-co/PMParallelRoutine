@@ -20,6 +20,8 @@ function evaluate_pf_scenarios(input_data::Dict)
     network = networks_info["Fora Ponta"]["network"]
     connection_points = PowerModelsParallelRoutine.build_connection_points(border, network, dates, scenarios);
 
+    all_flowtimes = Vector{Float64}()
+
     for (sig, network_info) in networks_info
         @info("Running Network Info: $sig")
         network       = network_info["network"]
@@ -51,7 +53,8 @@ function evaluate_pf_scenarios(input_data::Dict)
                 lv1_scenarios, lv1_tuples
             );
             if command
-                tim = @time evaluate_execution_groups_parallel_optimized!(network, execution_groups, lv1_tuples, model_hierarchy, Dict(), lv1_connection_points, outputs_channel)
+                all_lv1_flowtimes, tim = @timed evaluate_execution_groups_parallel_optimized!(network, execution_groups, lv1_tuples, model_hierarchy, Dict(), lv1_connection_points, outputs_channel)
+                all_flowtimes = vcat(all_flowtimes, all_lv1_flowtimes)
             else
                 # Evaluate all execution groups 
                 evaluate_execution_groups!(network, execution_groups, lv1_tuples, model_hierarchy, Dict(), lv1_connection_points)
@@ -66,7 +69,7 @@ function evaluate_pf_scenarios(input_data::Dict)
         update_connection_points!(connection_points, lv0_connection_points)
     end
 
-    return connection_points
+    return connection_points, all_flowtimes
 end
 
 @everywhere function parallel_pf_dummy(network, operating_points, model_hierarchy, 
@@ -83,25 +86,28 @@ end
                                   parameters, connection_points, 
                                   outputs_channel; logs = true)  
     @info("In worker $(myid())")
-    connection_points = PowerModelsParallelRoutine.evaluate_pf_group(
+    connection_points, flowtimes = PowerModelsParallelRoutine.evaluate_pf_group(
         network, operating_points, model_hierarchy, 
         parameters, connection_points; logs = logs
     )
     
     # @info("Worker $(myid()): before putting in channel")
-    # put!(outputs_channel, connection_points)
+    put!(outputs_channel, flowtimes)
     # @info("Worker $(myid()): put sucessful")
+    return connection_points
 end
 
-function retrive_outputs!(outputs_channel, master_cp, n_exec_groups)
+function retrive_outputs!(outputs_channel, n_exec_groups)
     n = 0
+    all_flowtimes = Vector{Float64}()
     while n < n_exec_groups
-        slave_cp = take!(outputs_channel)
-        update_connection_points!(master_cp, slave_cp)
+        flowtimes = take!(outputs_channel)
+        all_flowtimes = vcat(all_flowtimes, flowtimes)
+        # update_connection_points!(master_cp, slave_cp)
         n += 1
         @info("Worker $(myid()): successfully took from output channel - progress: $n / $n_exec_groups")
     end
-    return 
+    return all_flowtimes
 end
 
 function evaluate_execution_groups_parallel_dummy!(network, execution_groups, ex_group_tuples, model_hierarchy, parameters, lv1_connection_points, outputs_channel)
@@ -154,10 +160,12 @@ function evaluate_execution_groups_parallel_optimized!(network, execution_groups
     end
     connection_points_array = [execution_groups[ex_group_tuples[i]] for i = 1:n_exec_groups]
     updated_connection_points_array = pmap(run_parallel_pf, connection_points_array, collect(1:n_exec_groups))
+    all_flowtimes = retrive_outputs!(outputs_channel, n_exec_groups)
     for i in 1:n_exec_groups
         update_connection_points!(lv1_connection_points, updated_connection_points_array[i])
     end
-    return 
+    
+    return all_flowtimes
 end
 
 function create_networks_info(ASPO::String, dates)

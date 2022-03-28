@@ -23,6 +23,7 @@ function evaluate_pf_group(network::Dict, operating_points::Dict, model_hierarch
 
     pms =  NetworkSimulations.instantiate_pm_models(network, model_hierarchy)
 
+    flowtimes = Vector{Float64}()
     for (s, scen) in enumerate(scenarios)
         for (t, date) in enumerate(timestamps)
             if logs
@@ -37,6 +38,7 @@ function evaluate_pf_group(network::Dict, operating_points::Dict, model_hierarch
             
             # run powermodels power flow algorithm
             results, flowtime = @timed NetworkSimulations.run_model(pms, network, model_hierarchy; filter_ref = filter_ref);
+            push!(flowtimes, flowtime)
             
             # verify convergence and re-load original file in non-convergence case
             pms = NetworkSimulations.verify_convergence(pms, original_network, model_hierarchy)
@@ -57,5 +59,8 @@ function evaluate_pf_group(network::Dict, operating_points::Dict, model_hierarch
         end
     end
 
-    return connection_points
+    return connection_points, flowtimes
 end
+
+# 1.42 -> 200
+# 1.76 -> 20

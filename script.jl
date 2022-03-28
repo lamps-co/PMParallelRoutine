@@ -20,24 +20,11 @@ end
     include("src/PowerModelsParallelRoutine.jl")
 end
 
-function handle_processes(command, procs)
-    if command
-        # addprocs(procs)
-        # @everywhere include("src/PowerModelsParallelRoutine.jl")
-        return RemoteChannel(()->Channel{Dict}(100));
-    end
-    return 
-end
-
-
-
 # Parallel Parameters
 parallel        = true
 procs           = 3
-const CHANNEL = RemoteChannel(()->Channel{Dict}(100));
+const CHANNEL = RemoteChannel(()->Channel{Vector{Float64}}(Inf));
 ###########
-
-
 
 include("script_functions.jl")
 
@@ -89,8 +76,8 @@ filter_results = PowerModelsParallelRoutine.create_filter_results(ASPO, network)
 
 networks_info["Fora Ponta"]["dates"] = networks_info["Fora Ponta"]["dates"] .|> DateTime
 
-lv0_parallel_strategy = build_parallel_strategy(scen = 1)
-lv1_parallel_strategy = build_parallel_strategy(d = true)
+lv0_parallel_strategy = build_parallel_strategy()
+lv1_parallel_strategy = build_parallel_strategy(scen = 1)
 
 model_hierarchy = Dict("1" => pm_acr_s)
 model_hierarchy["1"]["build_model"] = PowerModelsParallelRoutine.NetworkSimulations.build_pf_plf_instantiate
@@ -112,51 +99,51 @@ input_data = Dict(
     )
 )
 
-connection_points, time = @timed evaluate_pf_scenarios(input_data)
+connection_points, all_flowtimes, time = @timed evaluate_pf_scenarios(input_data)
 
 
 
-using Distributed
+# using Distributed
 
-addprocs(2)
+# addprocs(2)
 
-a = Dict((i, rand(1_100_000)) for i = 1:100)
-
-
-@sync @distributed for (i, a_i) in [(i, a[i]) for i = 1:10]
-    sleep(0.1)
-    @info("In worker $(myid()). Received object with size $(Base.summarysize(a_i)/1e6)")
-end
+# a = Dict((i, rand(1_100_000)) for i = 1:100)
 
 
-
-using Ipopt, JuMP, PowerModels
-network = parse_file("case3.m")
-
-pm = PM.instantiate_model(network, IVRPowerModel, PowerModels.build_pf_iv)
-
-constr = Dict()
-
-constr["gen_pg"] = Dict()
-
-
-model = Model()
-
-@objective(model, Min, sum(x) + sum(y));
-set_optimizer(model, Ipopt.Optimizer)
-
-optimize!(model)
-
-value(model[:x][5])
-
-constr["gen_pg"] = @constraint(model, gen_pg[i in 1:10], x[i] == 1)
+# @sync @distributed for (i, a_i) in [(i, a[i]) for i = 1:10]
+#     sleep(0.1)
+#     @info("In worker $(myid()). Received object with size $(Base.summarysize(a_i)/1e6)")
+# end
 
 
 
+# using Ipopt, JuMP, PowerModels
+# network = parse_file("case3.m")
 
+# pm = PM.instantiate_model(network, IVRPowerModel, PowerModels.build_pf_iv)
+
+# constr = Dict()
+
+# constr["gen_pg"] = Dict()
+
+
+# model = Model()
+
+# @objective(model, Min, sum(x) + sum(y));
+# set_optimizer(model, Ipopt.Optimizer)
+
+# optimize!(model)
+
+# value(model[:x][5])
+
+# constr["gen_pg"] = @constraint(model, gen_pg[i in 1:10], x[i] == 1)
 
 
 
 
 
-varinfo()
+
+
+
+
+# varinfo()
