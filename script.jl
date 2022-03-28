@@ -27,6 +27,17 @@ CHANNEL = RemoteChannel(()->Channel{Vector{Float64}}(Inf));
 ###########
 
 function run_test(instance, lv0_parallel_strategy, lv1_parallel_strategy)
+    @everywhere procids begin
+        using Pkg
+        # cd("PMParallelRoutine")
+        Pkg.activate(".")
+        Pkg.instantiate()
+    end
+
+    @everywhere procids begin
+        include("src/PowerModelsParallelRoutine.jl")
+    end
+
     include("script_functions.jl")
 
     ######### Define PowerModels Parameters ###############
@@ -92,7 +103,7 @@ end
 #                                                     #
 # instance = "tutorial"    # scenarios: 2,   years:1, days:1   - total number of power flow = 2*1*1*24     =        48   #
 # instance = "level 1"     # scenarios: 2,   years:1, days:2   - total number of power flow = 2*1*2*24     =        96   #
-# instance = "level 2"     # scenarios: 5,   years:1, days:5   - total number of power flow = 5*1*5*24     =       600   #
+instance = "level 2"     # scenarios: 5,   years:1, days:5   - total number of power flow = 5*1*5*24     =       600   #
 # instance = "level 3"     # scenarios: 10,  years:1, days:10  - total number of power flow = 10*1*10*24   =     2.400   #
 # instance = "level 4"     # scenarios: 20,  years:1, days:61  - total number of power flow = 20*1*61*24   =    29.280   #
 # instance = "level 5"     # scenarios: 50,  years:1, days:181 - total number of power flow = 50*1*181*24  =   210.200   #
@@ -102,17 +113,84 @@ end
 #######################################################
 
 results = Dict()
-for i in 1:20
+for i in 1:5
     addprocs(1)
 
     if i == 1
-        lv0_parallel_strategy = build_parallel_strategy(scen = 1)
-        lv1_parallel_strategy = build_parallel_strategy()
+        lv0_parallel_strategy = build_parallel_strategy() # 1 grupo
+        lv1_parallel_strategy = build_parallel_strategy() # 1 grupo 
     elseif i == 2
-        lv0_parallel_strategy = build_parallel_strategy(scen = 2) # 3 grupos
-        lv1_parallel_strategy = build_parallel_strategy(scen = 1)
+        lv0_parallel_strategy = build_parallel_strategy() # 1 grupo
+        lv1_parallel_strategy = build_parallel_strategy(h = 12) # (24/12) = 2 grupos
+    elseif i == 3
+        lv0_parallel_strategy = build_parallel_strategy() # 1 grupo
+        lv1_parallel_strategy = build_parallel_strategy(h = 8) # (24/8) = 3 grupos
+    elseif i == 4
+        lv0_parallel_strategy = build_parallel_strategy() # 1 grupo
+        lv1_parallel_strategy = build_parallel_strategy(h = 6) # (24/6) = 4 grupos
+    elseif i == 5
+        lv0_parallel_strategy = build_parallel_strategy() # 1 grupo
+        lv1_parallel_strategy = build_parallel_strategy(scen = 1) # (5/1) = 5 grupos
+    elseif i == 6
+        lv0_parallel_strategy = build_parallel_strategy() # 1 grupo
+        lv1_parallel_strategy = build_parallel_strategy(h = 4) # (24/4) 6 grupos
+    elseif i == 7
+        lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
+        lv1_parallel_strategy = build_parallel_strategy(h = 4) # (24/4) 6 grupos
+    elseif i == 8
+        lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
+        lv1_parallel_strategy = build_parallel_strategy(h = 3, doy = 3) # (24/3) 8 grupos
+    elseif i == 9
+        lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
+        lv1_parallel_strategy = build_parallel_strategy(scen = 2, doy = 2)  # (5/2) * (5/2) = 3*3 = 9 grupos
+    elseif i == 10
+        lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
+        lv1_parallel_strategy = build_parallel_strategy(scen = 1, h = 12) # (5/1) * (24/12) = 5*2 = 10 grupos
+    elseif i == 11
+        lv0_parallel_strategy = build_parallel_strategy() # 1 grupo
+        lv1_parallel_strategy = build_parallel_strategy(scen = 1, h = 12) # (5/1) * (24/12) = 5*2 = 10 grupos
+    elseif i == 12
+        lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
+        lv1_parallel_strategy = build_parallel_strategy(scen = 3, h = 4)  # (5/3) * (24/4) = 2*6 = 12 grupos
+    elseif i == 13
+        lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
+        lv1_parallel_strategy = build_parallel_strategy(scen = 3, h = 4)  # (5/3) * (24/4) = 2*6 = 12 grupos
+    elseif i == 14
+        lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
+        lv1_parallel_strategy = build_parallel_strategy(scen = 3, h = 4)  # (5/3) * (24/4) = 2*6 = 12 grupos
+    elseif i == 15
+        lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
+        lv1_parallel_strategy = build_parallel_strategy(scen = 1, h = 8)  # (5/1) * (24/3) = 5*3 = 15 grupos
+    elseif i == 16
+        lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
+        lv1_parallel_strategy = build_parallel_strategy(scen = 3, h = 3)  # (5/3) * (24/3) = 2*8 = 16 grupos
     end
 
     connection_points, all_flowtimes, time = run_test(instance, lv0_parallel_strategy, lv1_parallel_strategy)
     results["$(nworkers())_workers"] = Dict("flow_times" => all_flowtimes, "total_time" => time)
 end
+
+
+i = 5
+
+scens = [1,2,3,4,5]
+ds    = [1,2,3,4,5]
+
+scen = 2
+d = 3
+
+
+ceil(5 / scen) * ceil(5/ d) == i
+
+
+
+lv0_parallel_strategy = build_parallel_strategy(scen = Int(floor(i / 2)), doy = Int(ceil(i / 2)))
+
+
+
+dias = 5
+
+
+
+
+

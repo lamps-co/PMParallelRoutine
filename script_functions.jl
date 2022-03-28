@@ -281,7 +281,7 @@ function evaluate_execution_groups!(network, execution_groups, ex_group_tuples, 
     return 
 end
 
-function build_parallel_strategy(;y = false, s = false, q = false, m = false, w = false, d = false, doy = false, dow = false, h = false, cont = false, scen = -1) 
+function build_parallel_strategy(;y = -1, s = -1, q = -1, m = -1, w = -1, d = -1, doy = -1, dow = -1, h = -1, cont = -1, scen = -1) 
     return (y = y, s = s, q = q, m = m, w = w, d = d, doy = doy, dow = dow, h = h, cont = cont, scen = scen)
 end
 
@@ -325,47 +325,47 @@ function create_filters(tuple::Tuple)
 
     filters = Function[]
     if tuple[1] !== nothing
-        push!(filters, (dt, y) -> dt["year"] == y)
+        push!(filters, (dt, y) -> dt["year"] in y)
     else
         push!(filters, (dt, y) -> true)
     end
     if tuple[2] !== nothing
-        push!(filters, (dt, s) -> dt["semester"] == s)
+        push!(filters, (dt, s) -> dt["semester"] in s)
     else
         push!(filters, (dt, s) -> true)
     end
     if tuple[3] !== nothing
-        push!(filters, (dt, q) -> dt["quarterofyear"] == q)
+        push!(filters, (dt, q) -> dt["quarterofyear"] in q)
     else
         push!(filters, (dt, q) -> true)
     end
     if tuple[4] !== nothing
-        push!(filters, (dt, m) -> dt["month"] == m)
+        push!(filters, (dt, m) -> dt["month"] in m)
     else
         push!(filters, (dt, m) -> true)
     end
     if tuple[5] !== nothing
-        push!(filters, (dt, w) -> dt["week"] == w)
+        push!(filters, (dt, w) -> dt["week"] in w)
     else
         push!(filters, (dt, w) -> true)
     end
     if tuple[6] !== nothing
-        push!(filters, (dt, d) -> dt["day"] == d)
+        push!(filters, (dt, d) -> dt["day"] in d)
     else
         push!(filters, (dt, d) -> true)
     end
     if tuple[7] !== nothing
-        push!(filters, (dt, doy) -> dt["dayofyear"] == doy)
+        push!(filters, (dt, doy) -> dt["dayofyear"] in doy)
     else
         push!(filters, (dt, doy) -> true)
     end
     if tuple[8] !== nothing
-        push!(filters, (dt, dow) -> dt["dayofweek"] == dow)
+        push!(filters, (dt, dow) -> dt["dayofweek"] in dow)
     else
         push!(filters, (dt, dow) -> true)
     end
     if tuple[9] !== nothing
-        push!(filters, (dt, h) -> dt["hour"] == h)
+        push!(filters, (dt, h) -> dt["hour"] in h)
     else
         push!(filters, (dt, h) -> true)
     end
@@ -393,36 +393,51 @@ set_of_daysofyear(dates) = unique(dayofyear.(dates))
 set_of_daysofweek(dates) = unique(dayofweek.(dates))
 set_of_hour(dates)       = unique(hour.(dates))
 
-function set_of_scenarios(scenarios_ids, n_scen_per_group)
-    Ω_scenarios = Vector[]
-    scenarios_group = []
+
+set_of_years(dates, n)      = subsets_from_vector(unique(year.(dates)), n)
+set_of_semesters(dates, n)  = subsets_from_vector(unique(semester.(dates)), n)
+set_of_quartersofyear(dates, n) = subsets_from_vector(unique(quarterofyear.(dates)), n)
+set_of_months(dates, n)     = subsets_from_vector(unique(month.(dates)), n)
+set_of_weeks(dates, n)      = subsets_from_vector(unique(week.(dates)), n)
+set_of_days(dates, n)       = subsets_from_vector(unique(day.(dates)), n)
+set_of_daysofyear(dates, n) = subsets_from_vector(unique(dayofyear.(dates)), n)
+set_of_daysofweek(dates, n) = subsets_from_vector(unique(dayofweek.(dates)), n)
+set_of_hour(dates, n)       = subsets_from_vector(unique(hour.(dates)), n)
+
+function subsets_from_vector(vec::Vector, n::Int) 
+    Ω_vec = Vector{Any}[]
+    vec_group = []
     count = 0
-    for s in scenarios_ids
+    for s in vec
         count += 1
-        push!(scenarios_group, s)
-        if count == n_scen_per_group
+        push!(vec_group, s)
+        if count == n
             count = 0
-            push!(Ω_scenarios, scenarios_group)
-            scenarios_group = []
+            push!(Ω_vec, vec_group)
+            vec_group = []
         end
     end
     if count != 0
-        push!(Ω_scenarios, scenarios_group)
+        push!(Ω_vec, vec_group)
     end
-    return Ω_scenarios
+    return Ω_vec
+end
+
+function set_of_scenarios(scenarios_ids, n_scen_per_group)
+    return subsets_from_vector(scenarios_ids, n_scen_per_group)
 end
 
 function build_execution_group_tuples(network_dates::Vector{DateTime}, scenarios_ids::Vector{Int}, parallel_strategy)
     (y, s, q, m, w, d, doy, dow, h, cont, scen) = parallel_strategy
-    Ω_years           = y == true   ? set_of_years(network_dates)          : [nothing]
-    Ω_semesters       = s == true   ? set_of_semesters(network_dates)      : [nothing]
-    Ω_quartersofyear  = q == true   ? set_of_quartersofyear(network_dates) : [nothing]
-    Ω_months          = m == true   ? set_of_months(network_dates)         : [nothing]
-    Ω_weeks           = w == true   ? set_of_weeks(network_dates)          : [nothing]
-    Ω_days            = d == true   ? set_of_days(network_dates)           : [nothing]
-    Ω_daysofyear      = doy == true   ? set_of_daysofyear(network_dates)     : [nothing]
-    Ω_daysofweek      = dow == true ? set_of_daysofweek(network_dates)     : [nothing]
-    Ω_hours           = h == true   ? set_of_hour(network_dates)           : [nothing]
+    Ω_years           = y == -1   ? [set_of_years(network_dates)]           : set_of_years(network_dates, y)
+    Ω_semesters       = s == -1   ? [set_of_semesters(network_dates)]       : set_of_semesters(network_dates, s)
+    Ω_quartersofyear  = q == -1   ? [set_of_quartersofyear(network_dates)]  : set_of_quartersofyear(network_dates, q)
+    Ω_months          = m == -1   ? [set_of_months(network_dates)]          : set_of_months(network_dates, m)
+    Ω_weeks           = w == -1   ? [set_of_weeks(network_dates)]           : set_of_weeks(network_dates, w)
+    Ω_days            = d == -1   ? [set_of_days(network_dates)]            : set_of_days(network_dates, d)
+    Ω_daysofweek      = dow == -1 ? [set_of_daysofweek(network_dates)]      : set_of_daysofweek(network_dates, dow)
+    Ω_daysofyear      = doy == -1 ? [set_of_daysofyear(network_dates)]      : set_of_daysofyear(network_dates, doy)
+    Ω_hours           = h == -1   ? [set_of_hour(network_dates)]            : set_of_hour(network_dates, h)
 
     Ω_scenarios       = scen != -1  ? set_of_scenarios(scenarios_ids, scen) : [-1]
 
