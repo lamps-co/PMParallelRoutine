@@ -88,9 +88,9 @@ end
         parameters, connection_points; logs = logs
     )
     
-    @info("Worker $(myid()): before putting in channel")
-    put!(outputs_channel, connection_points)
-    @info("Worker $(myid()): put sucessful")
+    # @info("Worker $(myid()): before putting in channel")
+    # put!(outputs_channel, connection_points)
+    # @info("Worker $(myid()): put sucessful")
 end
 
 function retrive_outputs!(outputs_channel, master_cp, n_exec_groups)
@@ -141,8 +141,8 @@ end
 
 function evaluate_execution_groups_parallel_optimized!(network, execution_groups, ex_group_tuples, model_hierarchy, parameters, lv1_connection_points, outputs_channel)
     n_exec_groups = length(ex_group_tuples)
-    @sync @distributed for (i, execution_group) in [(i, execution_groups[ex_group_tuples[i]]) for i = 1:n_exec_groups]
-        @info("Executing Group: $(ex_group_tuples[i]) in worker $(myid()). Optimized!!!!")
+    function run_parallel_pf(execution_group, i)
+        @info("Executing Group: $(ex_group_tuples[i]) in worker $(myid()). Optimized pmap!!!!")
         parallel_pf(
             network, 
             execution_group["operating_points"],
@@ -152,7 +152,11 @@ function evaluate_execution_groups_parallel_optimized!(network, execution_groups
             outputs_channel
         )
     end
-    retrive_outputs!(outputs_channel, lv1_connection_points, n_exec_groups)
+    connection_points_array = [execution_groups[ex_group_tuples[i]] for i = 1:n_exec_groups]
+    updated_connection_points_array = pmap(run_parallel_pf, connection_points_array, collect(1:n_exec_groups))
+    for i in 1:n_exec_groups
+        update_connection_points!(lv1_connection_points, updated_connection_points_array[i])
+    end
     return 
 end
 
