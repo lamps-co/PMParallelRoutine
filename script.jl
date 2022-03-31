@@ -19,7 +19,7 @@ using Distributed
 # end
 
 # Parallel Parameters
-parallel        = false
+parallel        = true
 procs           = 3
 CHANNEL = RemoteChannel(()->Channel{Vector{Float64}}(Inf));
 ###########
