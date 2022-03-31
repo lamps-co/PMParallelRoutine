@@ -168,7 +168,7 @@ function evaluate_execution_groups_parallel_optimized!(network, execution_groups
     return all_flowtimes
 end
 
-function create_networks_info(ASPO::String, dates)
+function create_networks_info(ASPO::String, dates, pm_ivr)
     low_network  = PowerModelsParallelRoutine.read_json("data/$ASPO/FP/EMS.json")
     PowerModelsParallelRoutine._handle_info!(low_network)
 
@@ -210,7 +210,7 @@ function update_connection_points!(master_cp, slave_cp)
 end
 
 function read_border_as_matrix(path) 
-    border = Matrix{Any}(CSV.read(file_border, delim = ";", DataFrame)[3:end, :])
+    border = Matrix{Any}(CSV.read(path, delim = ";", DataFrame)[3:end, :])
     border[:, 1] = string.(border[:, 1])
     border[:, 2:end] = parse.(Int, border[:, 2:end])
     return border
