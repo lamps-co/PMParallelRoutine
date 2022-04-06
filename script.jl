@@ -147,7 +147,7 @@ function run_study(study_name, machine_ids, input_data)
 
     results = Dict()
     for i in 1:36
-        procids = addprocs([(machine_ids[i % length(machine_ids) + 1], 1)], sshflags=`-vvv -o StrictHostKeyChecking=no -i "/Users/pedroferraz/Desktop/acmust_lamps.pem"`, tunnel=true, exename="/home/ubuntu/julia-1.6.5/bin/julia", exeflags=["--project"], dir="/home/ubuntu/PMParallelRoutine/", max_parallel=100)
+        procids = addprocs([(machine_ids[i % length(machine_ids) + 1], 1)], sshflags=`-vvv -o StrictHostKeyChecking=no -i "G:/Meu Drive/Energisa Must II/Repositories/PMParallelRoutine/acmust_lamps.pem"`, tunnel=true, exename="/home/ubuntu/julia-1.6.5/bin/julia", exeflags=["--project"], dir="/home/ubuntu/PMParallelRoutine/", max_parallel=100, shell = :wincmd)
         procids = workers()
         @everywhere procids begin
             include("src/PowerModelsParallelRoutine.jl")
@@ -211,7 +211,7 @@ function run_sequential_study(study_name, machine_ids, input_data)
     study_input_data = deepcopy(input_data)
     results = Dict()
 
-    procids = addprocs([(machine_ids[1], 1)], sshflags=`-vvv -i "/Users/pedroferraz/Desktop/acmust_lamps.pem"`, tunnel=true, exename="/home/ubuntu/julia-1.6.5/bin/julia", exeflags=["--project"], dir="/home/ubuntu/PMParallelRoutine/", max_parallel=100)
+    procids = addprocs([(machine_ids[1], 1)], sshflags=`-vvv -i "G:/Meu Drive/Energisa Must II/Repositories/PMParallelRoutine/acmust_lamps.pem"`, tunnel=true, exename="/home/ubuntu/julia-1.6.5/bin/julia", exeflags=["--project"], dir="/home/ubuntu/PMParallelRoutine/", max_parallel=100, shell = :wincmd)
     procids = workers()
     @everywhere procids begin
         include("src/PowerModelsParallelRoutine.jl")
@@ -232,76 +232,54 @@ function run_sequential_study(study_name, machine_ids, input_data)
     send_mail(file_name, "Estudo sequencial: $(study_name)")    
 end
 
-############################### Primeiro teste ###############################
-"ubuntu@ec2-3-89-225-65.compute-1.amazonaws.com:22"
+############################### Quarto teste ###############################
 
-input_data = create_input_data("level 1")
-run_sequential_study("Sequencial c6i.4xlarge", ["ubuntu@ec2-174-129-50-22.compute-1.amazonaws.com:22"], input_data)
-rmprocs(workers())
+ rmprocs(workers())
 input_data = create_input_data("level 4", ts_range=1:24*36, scen_range=1:4)
 try
-    run_study("Parallel c6i.4xlarge", [
-        "ubuntu@ec2-174-129-50-22.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-34-207-82-143.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-50-19-161-103.compute-1.amazonaws.com:22"
+    run_study("Parallel c6i.large", [
+        "ubuntu@ec2-3-95-196-126.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-237-202-131.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-242-158-218.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-89-174-124.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-83-111-245.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-198-26-77.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-145-40-187.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-91-72-198.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-226-107-115.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-23-20-156-5.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-3-90-201-104.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-164-5-149.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-3-84-185-146.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-75-101-211-0.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-52-23-197-69.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-34-227-192-72.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-147-209-218.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-84-72-53.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-204-105-86.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-160-131-158.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-107-22-150-92.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-234-73-236.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-18-212-240-124.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-34-202-236-201.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-18-212-102-125.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-80-191-25.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-18-212-203-120.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-3-85-97-221.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-34-229-138-202.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-52-91-93-149.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-242-175-174.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-221-83-45.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-237-195-143.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-75-101-180-231.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-83-93-101.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-160-225-163.compute-1.amazonaws.com:22"
     ], input_data)
 catch e
     if isdefined(e, :msg)
-        return send_mail("Erro durante a execução do estudo Parallel c6i.4xlarge", message="Mensagem de erro: $(e.msg)")  
+        return send_mail("Erro durante a execução do estudo Parallel c6i.large", message="Mensagem de erro: $(e.msg)")  
     else
-        return send_mail("Erro durante a execução do estudo Parallel c6i.4xlarge", message="Não houve mensagem de erro.")  
-    end
-end
-##############################################################################
-
-############################### Segundo teste ################################
-input_data = create_input_data("level 1")
-run_sequential_study("Sequencial c6i.2xlarge", ["ubuntu@ec2-3-95-205-85.compute-1.amazonaws.com:22"], input_data)
-rmprocs(workers())
-input_data = create_input_data("level 4", ts_range=1:24*36, scen_range=1:4)
-try
-    run_study("Parallel c6i.2xlarge", [
-        "ubuntu@ec2-3-95-205-85.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-160-194-170.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-3-93-198-192.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-35-173-128-243.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-209-108-236.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-18-206-213-155.compute-1.amazonaws.com:22"
-    ], input_data)
-catch e
-    if isdefined(e, :msg)
-        return send_mail("Erro durante a execução do estudo Parallel c6i.2xlarge", message="Mensagem de erro: $(e.msg)")  
-    else
-        return send_mail("Erro durante a execução do estudo Parallel c6i.2xlarge", message="Não houve mensagem de erro.")  
-    end
-end
-##############################################################################
-
-############################### Terceiro teste ###############################
-input_data = create_input_data("level 1")
-run_sequential_study("Sequencial c6i.xlarge", ["ubuntu@ec2-54-227-67-130.compute-1.amazonaws.com:22"], input_data)
-rmprocs(workers())
-input_data = create_input_data("level 4", ts_range=1:24*36, scen_range=1:4)
-try
-    run_study("Parallel c6i.xlarge", [
-        "ubuntu@ec2-54-227-67-130.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-34-229-83-231.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-18-234-84-230.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-3-93-176-124.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-221-123-46.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-52-23-165-232.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-196-231-22.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-3-93-198-189.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-80-72-0.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-226-86-216.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-204-145-32.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-3-84-186-56.compute-1.amazonaws.com:22"
-    ], input_data)
-catch e
-    if isdefined(e, :msg)
-        return send_mail("Erro durante a execução do estudo Parallel c6i.xlarge", message="Mensagem de erro: $(e.msg)")  
-    else
-        return send_mail("Erro durante a execução do estudo Parallel c6i.xlarge", message="Não houve mensagem de erro.")  
+        return send_mail("Erro durante a execução do estudo Parallel c6i.large", message="Não houve mensagem de erro.")  
     end
 end
 ##############################################################################
