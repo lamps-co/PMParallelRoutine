@@ -147,7 +147,7 @@ function run_study(study_name, machine_ids, input_data)
 
     results = Dict()
     for i in 1:36
-        procids = addprocs([(machine_ids[i % length(machine_ids) + 1], 1)], sshflags=`-vvv -o StrictHostKeyChecking=no -i "G:/Meu Drive/Energisa Must II/Repositories/PMParallelRoutine/acmust_lamps.pem"`, tunnel=true, exename="/home/ubuntu/julia-1.6.5/bin/julia", exeflags=["--project"], dir="/home/ubuntu/PMParallelRoutine/", max_parallel=100, shell = :wincmd)
+        procids = addprocs([(machine_ids[i % length(machine_ids) + 1], 1)], sshflags=`-vvv -o StrictHostKeyChecking=no -i "home/ischavarry/Dropbox/Prainha/acmust_lamps.pem"`, tunnel=true, exename="/home/ubuntu/julia-1.6.5/bin/julia", exeflags=["--project"], dir="/home/ubuntu/PMParallelRoutine/", max_parallel=100)
         procids = workers()
         @everywhere procids begin
             include("src/PowerModelsParallelRoutine.jl")
@@ -211,7 +211,7 @@ function run_sequential_study(study_name, machine_ids, input_data)
     study_input_data = deepcopy(input_data)
     results = Dict()
 
-    procids = addprocs([(machine_ids[1], 1)], sshflags=`-vvv -i "G:/Meu Drive/Energisa Must II/Repositories/PMParallelRoutine/acmust_lamps.pem"`, tunnel=true, exename="/home/ubuntu/julia-1.6.5/bin/julia", exeflags=["--project"], dir="/home/ubuntu/PMParallelRoutine/", max_parallel=100, shell = :wincmd)
+    procids = addprocs([(machine_ids[1], 1)], sshflags=`-vvv -i "home/ischavarry/Dropbox/Prainha/acmust_lamps.pem"`, tunnel=true, exename="/home/ubuntu/julia-1.6.5/bin/julia", exeflags=["--project"], dir="/home/ubuntu/PMParallelRoutine/", max_parallel=100)
     procids = workers()
     @everywhere procids begin
         include("src/PowerModelsParallelRoutine.jl")
