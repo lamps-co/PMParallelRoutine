@@ -1,30 +1,77 @@
 include("src/PowerModelsParallelRoutine.jl")
-using Dates, CSV, DataFrames, Statistics
+using Dates, CSV, DataFrames, Statistics, JSON
 using Distributed
+using SMTPClient
 
-# procids = addprocs([("ubuntu@ec2-3-95-62-135.compute-1.amazonaws.com:22", 5), ("ubuntu@ec2-54-196-149-95.compute-1.amazonaws.com:22", 5)], sshflags=`-vvv -o StrictHostKeyChecking=no -i "~/Dropbox/Prainha/acmust_lamps.pem"`, tunnel=true, exename="julia-1.6.5/bin/julia", dir="/home/ubuntu")
-# procids = addprocs([("ubuntu@ec2-54-242-126-173.compute-1.amazonaws.com:22", 5), ("ubuntu@ec2-52-91-97-87.compute-1.amazonaws.com:22", 5)], sshflags=`-vvv -i /Users/pedroferraz/Desktop/acmust_lamps.pem`, tunnel=true, exename="julia-1.6.5/bin/julia", dir="/home/ubuntu")
-# ssh -i /Users/pedroferraz/Desktop/acmust_lamps.pem ubuntu@ec2-23-22-156-46.compute-1.amazonaws.com
-# ssh -i /Users/pedroferraz/Desktop/acmust_lamps.pem ubuntu@ec2-54-196-149-95.compute-1.amazonaws.com
+# procids = addprocs([("ubuntu@ec2-174-129-50-22.compute-1.amazonaws.com:22", 1)], sshflags=`-vvv -o StrictHostKeyChecking=no -i "/Users/pedroferraz/Desktop/acmust_lamps.pem"`, tunnel=true, exename="/home/ubuntu/julia-1.6.5/bin/julia", exeflags=["--project"], dir="/home/ubuntu/PMParallelRoutine/", max_parallel=100)
+ssh -i /Users/pedroferraz/Desktop/acmust_lamps.pem ubuntu@ec2-54-227-67-130.compute-1.amazonaws.com
 
 # @everywhere procids begin
 #     using Pkg
-#     cd("PMParallelRoutine")
 #     Pkg.activate(".")
 #     Pkg.instantiate()
 # end
 
-# @everywhere procids begin
-#     include("src/PowerModelsParallelRoutine.jl")
-# end
+function send_mail(subject::String; message::String="")
+    opt = SendOptions(
+    isSSL = true,
+    username = "pedroferraz1029@gmail.com",
+    passwd = "TestesJulia123",
+    verbose=true)
+
+    url = "smtp://smtp.gmail.com:587"
+    to = ["<pedroferraz1029@gmail.com>", "<iagochavarry20@gmail.com>"]
+    from = "<pedroferraz1029@gmail.com>"
+    subject = subject
+    message = message
+
+    mime_msg = get_mime_msg(message)
+
+    body = get_body(to, from, subject, mime_msg)
+
+    resp = send(url, to, from, body, opt)
+end
+
+function send_mail(file_name::String, subject::String; message::String="")
+    opt = SendOptions(
+    isSSL = true,
+    username = "pedroferraz1029@gmail.com",
+    passwd = "TestesJulia123",
+    verbose=true)
+
+    url = "smtp://smtp.gmail.com:587"
+    to = ["<pedroferraz1029@gmail.com>", "<iagochavarry20@gmail.com>"]
+    from = "<pedroferraz1029@gmail.com>"
+    subject = subject
+    message = message
+    attachments = [file_name]
+
+    mime_msg = get_mime_msg(message)
+
+    body = get_body(to, from, subject, mime_msg; attachments)
+
+    resp = send(url, to, from, body, opt)
+end
 
 # Parallel Parameters
 parallel        = true
 procs           = 3
 CHANNEL = RemoteChannel(()->Channel{Vector{Float64}}(Inf));
-###########
-
-function run_test(instance, lv0_parallel_strategy, lv1_parallel_strategy)
+include("script_functions.jl")
+#                Possible Instances                   #
+#                                                     #
+# instance = "tutorial"    # scenarios: 2,   years:1, days:1   - total number of power flow = 2*1*1*24     =        48   #
+# instance = "level 1"     # scenarios: 2,   years:1, days:2   - total number of power flow = 2*1*2*24     =        96   #
+# instance = "level 2"     # scenarios: 5,   years:1, days:5   - total number of power flow = 5*1*5*24     =       600   #
+# instance = "level 3"     # scenarios: 10,  years:1, days:10  - total number of power flow = 10*1*10*24   =     2.400   #
+# instance = "level 4"     # scenarios: 20,  years:1, days:61  - total number of power flow = 20*1*61*24   =    29.280   #
+# instance = "level 5"     # scenarios: 50,  years:1, days:181 - total number of power flow = 50*1*181*24  =   210.200   #
+# instance = "level 6"     # scenarios: 100, years:1, days:360 - total number of power flow = 100*1*360*24 =   864.000   #
+# instance = "final boss"  # scenarios: 200, years:4, days:360 - total number of power flow = 200*4*360*24 = 6.912.000   #
+#                                                     #
+#######################################################
+function create_input_data(instance; ts_range=nothing, scen_range=nothing)
+    ###########
     pm_ivr = PowerModelsParallelRoutine.pm_ivr_parameters #
     pm_acr = PowerModelsParallelRoutine.pm_acr_parameters #
     pm_ivr_s = PowerModelsParallelRoutine.pm_ivr_parameters_silence #
@@ -44,6 +91,13 @@ function run_test(instance, lv0_parallel_strategy, lv1_parallel_strategy)
     #_--__--__--__--__--__--__--__--__--__--__--__--__--__--__--__--__--__-#
 
     gen_scenarios, load_scenarios, trash = PowerModelsParallelRoutine.read_scenarios(ASPO, instance);
+    timestamps_range = isnothing(ts_range) ? collect(1:size(gen_scenarios["values"], 1)) : ts_range
+    scenarios_range = isnothing(scen_range) ? collect(1:size(gen_scenarios["values"], 3)) : scen_range
+    gen_scenarios["values"] = gen_scenarios["values"][timestamps_range, :, scenarios_range]
+    gen_scenarios["dates"] = gen_scenarios["dates"][timestamps_range]
+    load_scenarios["values"] = load_scenarios["values"][timestamps_range, :, scenarios_range]
+    load_scenarios["dates"] = load_scenarios["dates"][timestamps_range]
+
     (all_timestamps, all_scenarios_ids, all_years, all_days) = PowerModelsParallelRoutine.case_parameters(gen_scenarios);
 
     dates_dict    = build_dates_dict(all_timestamps)
@@ -61,6 +115,9 @@ function run_test(instance, lv0_parallel_strategy, lv1_parallel_strategy)
     model_hierarchy = Dict("1" => pm_acr_s)
     model_hierarchy["1"]["build_model"] = PowerModelsParallelRoutine.NetworkSimulations.build_pf_plf_instantiate
 
+    lv0_parallel_strategy = build_parallel_strategy()
+    lv1_parallel_strategy = build_parallel_strategy()
+
     input_data = Dict(
         "gen_scenarios"     => gen_scenarios,
         "load_scenarios"    => load_scenarios,
@@ -77,112 +134,203 @@ function run_test(instance, lv0_parallel_strategy, lv1_parallel_strategy)
             "outputs_channel" => CHANNEL
         )
     )
+    return input_data
+end
 
+function run_test(input_data)
     (connection_points, all_flowtimes), time = @timed evaluate_pf_scenarios(input_data)
     return connection_points, all_flowtimes, time
 end
 
-#                Possible Instances                   #
-#                                                     #
-instance = "tutorial"    # scenarios: 2,   years:1, days:1   - total number of power flow = 2*1*1*24     =        48   #
-# instance = "level 1"     # scenarios: 2,   years:1, days:2   - total number of power flow = 2*1*2*24     =        96   #
-# instance = "level 2"     # scenarios: 5,   years:1, days:5   - total number of power flow = 5*1*5*24     =       600   #
-# instance = "level 3"     # scenarios: 10,  years:1, days:10  - total number of power flow = 10*1*10*24   =     2.400   #
-# instance = "level 4"     # scenarios: 20,  years:1, days:61  - total number of power flow = 20*1*61*24   =    29.280   #
-# instance = "level 5"     # scenarios: 50,  years:1, days:181 - total number of power flow = 50*1*181*24  =   210.200   #
-# instance = "level 6"     # scenarios: 100, years:1, days:360 - total number of power flow = 100*1*360*24 =   864.000   #
-# instance = "final boss"  # scenarios: 200, years:4, days:360 - total number of power flow = 200*4*360*24 = 6.912.000   #
-#                                                     #
-#######################################################
+function run_study(study_name, machine_ids, input_data)
+    study_input_data = deepcopy(input_data)
 
-include("script_functions.jl")
-PowerModelsParallelRoutine.NetworkSimulations.PowerModels.silence()
-lv0_parallel_strategy = build_parallel_strategy() # 1 grupo
-lv1_parallel_strategy = build_parallel_strategy() # 1 grupo 
-connection_points, all_flowtimes, time = run_test(instance, lv0_parallel_strategy, lv1_parallel_strategy)
+    results = Dict()
+    for i in 1:36
+        procids = addprocs([(machine_ids[i % length(machine_ids) + 1], 1)], sshflags=`-vvv -o StrictHostKeyChecking=no -i "/Users/pedroferraz/Desktop/acmust_lamps.pem"`, tunnel=true, exename="/home/ubuntu/julia-1.6.5/bin/julia", exeflags=["--project"], dir="/home/ubuntu/PMParallelRoutine/", max_parallel=100)
+        procids = workers()
+        @everywhere procids begin
+            include("src/PowerModelsParallelRoutine.jl")
+        end
+        include("script_functions.jl")
 
-# results = Dict()
-# for i in 1:16
-#     addprocs(1)
-#     include("script_functions.jl")
-#     procids = workers()
-#     @everywhere procids begin
-#         using Pkg
-#         # cd("PMParallelRoutine")
-#         Pkg.activate(".")
-#         Pkg.instantiate()
-#     end
+        ######### Define PowerModels Parameters ###############
+        @everywhere PowerModelsParallelRoutine.NetworkSimulations.PowerModels.silence() 
+        
+        if i == 3
+            lv0_parallel_strategy = build_parallel_strategy(scen = 1) # 1 grupo
+            lv1_parallel_strategy = build_parallel_strategy(doy = 12) # (36/12) = 3 grupos
+        elseif i == 4
+            lv0_parallel_strategy = build_parallel_strategy(scen = 1) # 1 grupo
+            lv1_parallel_strategy = build_parallel_strategy(doy = 9) # (36/6) = 4 grupos
+        elseif i == 6
+            lv0_parallel_strategy = build_parallel_strategy(scen = 1) # 1 grupo
+            lv1_parallel_strategy = build_parallel_strategy(doy = 6) # (36/6) 6 grupos
+        elseif i == 8
+            continue
+            # lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
+            # lv1_parallel_strategy = build_parallel_strategy(doy = 9, scen = 2) # (36/9 * 4/2) 8 grupos
+        elseif i == 9
+            lv0_parallel_strategy = build_parallel_strategy(scen = 1) # 1 grupos
+            lv1_parallel_strategy = build_parallel_strategy(doy = 4)  # (36/4) = 9 grupos
+        elseif i == 12
+            lv0_parallel_strategy = build_parallel_strategy(scen = 1) # 1 grupos
+            lv1_parallel_strategy = build_parallel_strategy(doy = 3)  # (36/3) = 12 grupos
+        elseif i == 16
+            continue
+            # lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
+            # lv1_parallel_strategy = build_parallel_strategy(doy = 9, scen = 1)  # (36/9 * 4/1) = 16 grupos
+        elseif i == 18
+            lv0_parallel_strategy = build_parallel_strategy(scen = 1) # 1 grupos
+            lv1_parallel_strategy = build_parallel_strategy(doy = 2)  # (36/2) = 18 grupos
+        elseif i == 24
+            continue
+            # lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
+            # lv1_parallel_strategy = build_parallel_strategy(doy = 3, scen = 2)  # (36/3 * 4/2) = 24 grupos
+        elseif i == 36
+            lv0_parallel_strategy = build_parallel_strategy(scen = 1) # 1 grupos
+            lv1_parallel_strategy = build_parallel_strategy(doy = 1)  # (36/1) = 36 grupos
+        elseif i < 36
+            continue
+        end
 
-#     @everywhere procids begin
-#         include("src/PowerModelsParallelRoutine.jl")
-#     end
+        # instance, lv0_parallel_strategy, lv1_parallel_strategy
+        study_input_data["parallel_strategy"]["lv0"] = lv0_parallel_strategy
+        study_input_data["parallel_strategy"]["lv1"] = lv1_parallel_strategy
 
-#     ######### Define PowerModels Parameters ###############
-#     @everywhere PowerModelsParallelRoutine.NetworkSimulations.PowerModels.silence() 
-           
-#     if i == 1
-#         lv0_parallel_strategy = build_parallel_strategy() # 1 grupo
-#         lv1_parallel_strategy = build_parallel_strategy() # 1 grupo 
-#     elseif i == 2
-#         lv0_parallel_strategy = build_parallel_strategy() # 1 grupo
-#         lv1_parallel_strategy = build_parallel_strategy(h = 12) # (24/12) = 2 grupos
-#     elseif i == 3
-#         lv0_parallel_strategy = build_parallel_strategy() # 1 grupo
-#         lv1_parallel_strategy = build_parallel_strategy(h = 8) # (24/8) = 3 grupos
-#     elseif i == 4
-#         lv0_parallel_strategy = build_parallel_strategy() # 1 grupo
-#         lv1_parallel_strategy = build_parallel_strategy(h = 6) # (24/6) = 4 grupos
-#     elseif i == 5
-#         lv0_parallel_strategy = build_parallel_strategy() # 1 grupo
-#         lv1_parallel_strategy = build_parallel_strategy(scen = 1) # (5/1) = 5 grupos
-#     elseif i == 6
-#         lv0_parallel_strategy = build_parallel_strategy() # 1 grupo
-#         lv1_parallel_strategy = build_parallel_strategy(h = 4) # (24/4) 6 grupos
-#     elseif i == 7
-#         lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
-#         lv1_parallel_strategy = build_parallel_strategy(h = 4) # (24/4) 6 grupos
-#     elseif i == 8
-#         lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
-#         lv1_parallel_strategy = build_parallel_strategy(h = 3, doy = 3) # (24/3) 8 grupos
-#     elseif i == 9
-#         lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
-#         lv1_parallel_strategy = build_parallel_strategy(scen = 2, doy = 2)  # (5/2) * (5/2) = 3*3 = 9 grupos
-#     elseif i == 10
-#         lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
-#         lv1_parallel_strategy = build_parallel_strategy(scen = 1, h = 12) # (5/1) * (24/12) = 5*2 = 10 grupos
-#     elseif i == 11
-#         lv0_parallel_strategy = build_parallel_strategy() # 1 grupo
-#         lv1_parallel_strategy = build_parallel_strategy(scen = 1, h = 12) # (5/1) * (24/12) = 5*2 = 10 grupos
-#     elseif i == 12
-#         lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
-#         lv1_parallel_strategy = build_parallel_strategy(scen = 3, h = 4)  # (5/3) * (24/4) = 2*6 = 12 grupos
-#     elseif i == 13
-#         lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
-#         lv1_parallel_strategy = build_parallel_strategy(scen = 3, h = 4)  # (5/3) * (24/4) = 2*6 = 12 grupos
-#     elseif i == 14
-#         lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
-#         lv1_parallel_strategy = build_parallel_strategy(scen = 3, h = 4)  # (5/3) * (24/4) = 2*6 = 12 grupos
-#     elseif i == 15
-#         lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
-#         lv1_parallel_strategy = build_parallel_strategy(scen = 1, h = 8)  # (5/1) * (24/3) = 5*3 = 15 grupos
-#     elseif i == 16
-#         lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
-#         lv1_parallel_strategy = build_parallel_strategy(scen = 3, h = 3)  # (5/3) * (24/3) = 2*8 = 16 grupos
-#     end
+        connection_points, all_flowtimes, time = run_test(study_input_data)
+        results["$(nworkers())_workers"] = Dict("flow_times" => all_flowtimes, "total_time" => time, "connection_points" => connection_points)
 
-#     connection_points, all_flowtimes, time = run_test(instance, lv0_parallel_strategy, lv1_parallel_strategy)
-#     results["$(nworkers())_workers"] = Dict("flow_times" => all_flowtimes, "total_time" => time)
-# end
+        file_name = "$(study_name)_$i.json"
+        PowerModelsParallelRoutine.write_json(file_name, results)
+        send_mail(file_name, "Atualização $(study_name): iteração $i")
+    end
+end
 
-# times = [results["$(i)_workers"]["total_time"] for i in 1:16]
-# flow_times = [mean(results["$(i)_workers"]["flow_times"]) for i in 1:16]
+function run_sequential_study(study_name, machine_ids, input_data)
+    study_input_data = deepcopy(input_data)
+    results = Dict()
 
-# dict = Dict("times" => times, "flow_times" => flow_times)
+    procids = addprocs([(machine_ids[1], 1)], sshflags=`-vvv -i "/Users/pedroferraz/Desktop/acmust_lamps.pem"`, tunnel=true, exename="/home/ubuntu/julia-1.6.5/bin/julia", exeflags=["--project"], dir="/home/ubuntu/PMParallelRoutine/", max_parallel=100)
+    procids = workers()
+    @everywhere procids begin
+        include("src/PowerModelsParallelRoutine.jl")
+    end
+    include("script_functions.jl")
+    @everywhere PowerModelsParallelRoutine.NetworkSimulations.PowerModels.silence() 
+    lv0_parallel_strategy = build_parallel_strategy()
+    lv1_parallel_strategy = build_parallel_strategy()
 
-# dict = read_json("results.json")
+    study_input_data["parallel_strategy"]["lv0"] = lv0_parallel_strategy
+    study_input_data["parallel_strategy"]["lv1"] = lv1_parallel_strategy
 
-# plot(dict["times"], title="Tempo de execução (em segundos)", xlabel="Número de workers", legend=false)
-# plot(dict["flow_times"], title="Tempo médio do fluxo de potência (em segundos)", xlabel="Número de workers", legend=false)
+    connection_points, all_flowtimes, time = run_test(study_input_data)
+    results["$(nworkers())_workers"] = Dict("flow_times" => all_flowtimes, "total_time" => time, "connection_points" => connection_points)
+
+    file_name = "$(study_name).json"
+    PowerModelsParallelRoutine.write_json(file_name, results)
+    send_mail(file_name, "Estudo sequencial: $(study_name)")    
+end
+
+############################### Primeiro teste ###############################
+"ubuntu@ec2-3-89-225-65.compute-1.amazonaws.com:22"
+
+input_data = create_input_data("level 1")
+run_sequential_study("Sequencial c6i.4xlarge", ["ubuntu@ec2-174-129-50-22.compute-1.amazonaws.com:22"], input_data)
+rmprocs(workers())
+input_data = create_input_data("level 4", ts_range=1:24*36, scen_range=1:4)
+try
+    run_study("Parallel c6i.4xlarge", [
+        "ubuntu@ec2-174-129-50-22.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-34-207-82-143.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-50-19-161-103.compute-1.amazonaws.com:22"
+    ], input_data)
+catch e
+    if isdefined(e, :msg)
+        return send_mail("Erro durante a execução do estudo Parallel c6i.4xlarge", message="Mensagem de erro: $(e.msg)")  
+    else
+        return send_mail("Erro durante a execução do estudo Parallel c6i.4xlarge", message="Não houve mensagem de erro.")  
+    end
+end
+##############################################################################
+
+############################### Segundo teste ################################
+input_data = create_input_data("level 1")
+run_sequential_study("Sequencial c6i.2xlarge", ["ubuntu@ec2-3-95-205-85.compute-1.amazonaws.com:22"], input_data)
+rmprocs(workers())
+input_data = create_input_data("level 4", ts_range=1:24*36, scen_range=1:4)
+try
+    run_study("Parallel c6i.2xlarge", [
+        "ubuntu@ec2-3-95-205-85.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-160-194-170.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-3-93-198-192.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-35-173-128-243.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-209-108-236.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-18-206-213-155.compute-1.amazonaws.com:22"
+    ], input_data)
+catch e
+    if isdefined(e, :msg)
+        return send_mail("Erro durante a execução do estudo Parallel c6i.2xlarge", message="Mensagem de erro: $(e.msg)")  
+    else
+        return send_mail("Erro durante a execução do estudo Parallel c6i.2xlarge", message="Não houve mensagem de erro.")  
+    end
+end
+##############################################################################
+
+############################### Terceiro teste ###############################
+input_data = create_input_data("level 1")
+run_sequential_study("Sequencial c6i.xlarge", ["ubuntu@ec2-54-227-67-130.compute-1.amazonaws.com:22"], input_data)
+rmprocs(workers())
+input_data = create_input_data("level 4", ts_range=1:24*36, scen_range=1:4)
+try
+    run_study("Parallel c6i.xlarge", [
+        "ubuntu@ec2-54-227-67-130.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-34-229-83-231.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-18-234-84-230.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-3-93-176-124.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-221-123-46.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-52-23-165-232.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-196-231-22.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-3-93-198-189.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-80-72-0.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-226-86-216.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-204-145-32.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-3-84-186-56.compute-1.amazonaws.com:22"
+    ], input_data)
+catch e
+    if isdefined(e, :msg)
+        return send_mail("Erro durante a execução do estudo Parallel c6i.xlarge", message="Mensagem de erro: $(e.msg)")  
+    else
+        return send_mail("Erro durante a execução do estudo Parallel c6i.xlarge", message="Não houve mensagem de erro.")  
+    end
+end
+##############################################################################
+
+results_4xlarge = read_json("Parallel c6i.4xlarge_36.json")
+results_2xlarge = read_json("Parallel c6i.2xlarge_36.json")
+results_xlarge = read_json("Parallel c6i.xlarge_36.json")
+
+I = [3, 4, 6, 9, 12, 18, 36]
+times_4xlarge = [results_4xlarge["$(i)_workers"]["total_time"] for i in I]
+flow_times_4xlarge = [mean(results_4xlarge["$(i)_workers"]["flow_times"]) for i in I]
+
+times_2xlarge = [results_2xlarge["$(i)_workers"]["total_time"] for i in I]
+flow_times_2xlarge = [mean(results_2xlarge["$(i)_workers"]["flow_times"]) for i in I]
+
+times_xlarge = [results_xlarge["$(i)_workers"]["total_time"] for i in I]
+flow_times_xlarge = [mean(results_xlarge["$(i)_workers"]["flow_times"]) for i in I]
+
+dict_4xlarge = Dict("times" => times_4xlarge, "flow_times" => flow_times_4xlarge)
+dict_2xlarge = Dict("times" => times_2xlarge, "flow_times" => flow_times_2xlarge)
+dict_xlarge = Dict("times" => times_xlarge, "flow_times" => flow_times_xlarge)
+
+plot(I, dict_xlarge["times"], title="Tempo de execução (em segundos)", xlabel="Número de workers", label="12 xlarge")
+plot!(I, dict_2xlarge["times"], title="Tempo de execução (em segundos)", xlabel="Número de workers", label="6 2xlarge")
+plot!(I, dict_4xlarge["times"], title="Tempo de execução (em segundos)", xlabel="Número de workers", label="3 4xlarge")
+
+plot(I, dict_xlarge["flow_times"], title="Tempo médio do fluxo de potência (em segundos)", xlabel="Número de workers", label="12 xlarge", legend=:bottomright)
+plot!(I, dict_2xlarge["flow_times"], title="Tempo médio do fluxo de potência (em segundos)", xlabel="Número de workers", label="6 2xlarge")
+plot!(I, dict_4xlarge["flow_times"], title="Tempo médio do fluxo de potência (em segundos)", xlabel="Número de workers", label="3 4xlarge")
 
 # using GLM, DataFrames
 # data = DataFrame(X=collect(1:16), Y=Float64.(dict["flow_times"]))
