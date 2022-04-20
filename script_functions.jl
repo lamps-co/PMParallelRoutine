@@ -27,10 +27,6 @@ function evaluate_pf_scenarios(input_data::Dict)
     for (sig, network_info) in networks_info
         @info("Running Network Info: $sig")
 
-        @info("TIRAR ABAIXO")
-        sig = "Fora Ponta"
-        network_info = networks_info[sig]
-
         network       = network_info["network"]
         lv0_dates     = network_info["dates"]
         lv0_scenarios = scenarios
@@ -183,11 +179,17 @@ function evaluate_execution_groups_parallel_optimized!(network, execution_groups
         evaluation_time = t2 - t0
         return updated_connection_points, time_pf, time_to_start_evaluating, evaluation_time
     end
-    updated_connection_points_array, time_pf, time_to_start_evaluating, evaluation_time = pmap(run_parallel_pf, connection_points_array, collect(1:n_exec_groups))
+    pmap_results = pmap(run_parallel_pf, connection_points_array, collect(1:n_exec_groups))
+
+    updated_connection_points_array = [result[1] for result in pmap_results] 
+    time_pf                         = [result[2] for result in pmap_results] 
+    time_to_start_evaluating        = [result[3] for result in pmap_results] 
+    evaluation_time                 = [result[4] for result in pmap_results]
+
     t3 = time()
     pmap_total_time = t3 - t0
 
-    lv1_time_matrix = hcat(time_to_start_evaluating, evaluation_time, repeat([pmap_total_time], length(n_exec_groups)))
+    lv1_time_matrix = hcat(time_to_start_evaluating, evaluation_time, repeat([pmap_total_time], n_exec_groups))
 
     all_flowtimes = retrive_outputs!(outputs_channel, n_exec_groups)
     for i in 1:n_exec_groups

@@ -1,4 +1,5 @@
 include("src/PowerModelsParallelRoutine.jl")
+
 using Dates, CSV, DataFrames, Statistics, JSON
 using Distributed
 using SMTPClient
@@ -236,7 +237,7 @@ function run_sequential_study(study_name, machine_ids, input_data)
 end
 
 ############################### Quinto teste ###############################
-# input_data = create_input_data("level 1")
+input_data = create_input_data("tutorial")
 # run_sequential_study("Sequencial c6i.large", ["ubuntu@ec2-3-95-196-126.compute-1.amazonaws.com:22"], input_data)
 # rmprocs(workers())
 
@@ -246,6 +247,10 @@ lv0_parallel_strategy = build_parallel_strategy(scen = 1) # 2 grupos
 lv1_parallel_strategy = build_parallel_strategy(h = 1)  # (61/31) = 2 grupos
 input_data["parallel_strategy"]["lv0"] = lv0_parallel_strategy
 input_data["parallel_strategy"]["lv1"] = lv1_parallel_strategy
+
+results = evaluate_pf_scenarios(input_data)
+
+results[3]["time_matrices"][2]
 
 try
     run_study("Parallel c6i.large", [
