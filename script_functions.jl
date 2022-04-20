@@ -21,9 +21,16 @@ function evaluate_pf_scenarios(input_data::Dict)
     connection_points = PowerModelsParallelRoutine.build_connection_points(border, network, dates, scenarios);
 
     all_flowtimes = Vector{Float64}()
+    all_ids_array = Vector{Any}()
+    all_time_matrices = Vector{Matrix{Float64}}()
 
     for (sig, network_info) in networks_info
         @info("Running Network Info: $sig")
+
+        @info("TIRAR ABAIXO")
+        sig = "Fora Ponta"
+        network_info = networks_info[sig]
+
         network       = network_info["network"]
         lv0_dates     = network_info["dates"]
         lv0_scenarios = scenarios
@@ -52,9 +59,15 @@ function evaluate_pf_scenarios(input_data::Dict)
                 lv1_connection_points, lv1_dates_dict, lv1_dates_indexes,
                 lv1_scenarios, lv1_tuples
             );
+            @info("Created all execution groups!")
+            
+            id_array = [(lv0_tup, lv1_tup) for lv1_tup in lv1_tuples]
+            push!(all_ids_array, id_array)
+
             if command
-                all_lv1_flowtimes, tim = @timed evaluate_execution_groups_parallel_optimized!(network, execution_groups, lv1_tuples, model_hierarchy, Dict(), lv1_connection_points, outputs_channel)
+                (all_lv1_flowtimes, lv1_time_matrix), tim = @timed evaluate_execution_groups_parallel_optimized!(network, execution_groups, lv1_tuples, model_hierarchy, Dict(), lv1_connection_points, outputs_channel)
                 all_flowtimes = vcat(all_flowtimes, all_lv1_flowtimes)
+                push!(all_time_matrices, lv1_time_matrix)
             else
                 # Evaluate all execution groups 
                 evaluate_execution_groups!(network, execution_groups, lv1_tuples, model_hierarchy, Dict(), lv1_connection_points)
@@ -69,7 +82,11 @@ function evaluate_pf_scenarios(input_data::Dict)
         update_connection_points!(connection_points, lv0_connection_points)
     end
 
-    return connection_points, all_flowtimes
+    data_movement_processing_overhead_dict = Dict()
+    data_movement_processing_overhead_dict["time_matrices"] = all_time_matrices
+    data_movement_processing_overhead_dict["ids_array"] = all_ids_array
+
+    return connection_points, all_flowtimes, data_movement_processing_overhead_dict
 end
 
 @everywhere function parallel_pf_dummy(network, operating_points, model_hierarchy, 
@@ -147,9 +164,13 @@ end
 
 function evaluate_execution_groups_parallel_optimized!(network, execution_groups, ex_group_tuples, model_hierarchy, parameters, lv1_connection_points, outputs_channel)
     n_exec_groups = length(ex_group_tuples)
+    connection_points_array = [execution_groups[ex_group_tuples[i]] for i = 1:n_exec_groups]
+
+    t0 = time()
     function run_parallel_pf(execution_group, i)
         @info("Executing Group: $(ex_group_tuples[i]) in worker $(myid()). Optimized pmap!!!!")
-        parallel_pf(
+        t1 = time()
+        updated_connection_points, time_pf = @timed parallel_pf(
             network, 
             execution_group["operating_points"],
             model_hierarchy,
@@ -157,15 +178,23 @@ function evaluate_execution_groups_parallel_optimized!(network, execution_groups
             execution_group["connection_points"],
             outputs_channel
         )
+        t2 = time()
+        time_to_start_evaluating = t1 - t0
+        evaluation_time = t2 - t0
+        return updated_connection_points, time_pf, time_to_start_evaluating, evaluation_time
     end
-    connection_points_array = [execution_groups[ex_group_tuples[i]] for i = 1:n_exec_groups]
-    updated_connection_points_array = pmap(run_parallel_pf, connection_points_array, collect(1:n_exec_groups))
+    updated_connection_points_array, time_pf, time_to_start_evaluating, evaluation_time = pmap(run_parallel_pf, connection_points_array, collect(1:n_exec_groups))
+    t3 = time()
+    pmap_total_time = t3 - t0
+
+    lv1_time_matrix = hcat(time_to_start_evaluating, evaluation_time, repeat([pmap_total_time], length(n_exec_groups)))
+
     all_flowtimes = retrive_outputs!(outputs_channel, n_exec_groups)
     for i in 1:n_exec_groups
         update_connection_points!(lv1_connection_points, updated_connection_points_array[i])
     end
     
-    return all_flowtimes
+    return all_flowtimes, lv1_time_matrix
 end
 
 function create_networks_info(ASPO::String, dates, pm_ivr)
@@ -510,11 +539,11 @@ function handle_dict_execution_group_new(lv1_connection_points, gen_scenarios, l
     ac_load = load_scenarios["values"]
     re_load = 0.1*load_scenarios["values"]
 
-    for (t, tuple) in enumerate(tuples)
-        group_timestamps = get_execution_group_dates(group_dates_dict, tuple)
+    for (t, tup) in enumerate(tuples)
+        group_timestamps = get_execution_group_dates(group_dates_dict, tup)
         group_timestamps_indexes = [group_dates_dict[t]["index"] for t in group_timestamps]
         t_indexes = lv1_dates_indexes[group_timestamps_indexes]
-        s_indexes  = get_execution_group_scenarios(lv1_scenarios, tuple)
+        s_indexes  = get_execution_group_scenarios(lv1_scenarios, tup)
 
         group_operation_points = Dict(
             "gen" => Dict(), 
@@ -548,8 +577,8 @@ function handle_dict_execution_group_new(lv1_connection_points, gen_scenarios, l
             "connection_points" => group_connection_point
         )
 
-        execution_groups[tuple] = execution_group
-        execution_groups_map[t] = tuple
+        execution_groups[tup] = execution_group
+        execution_groups_map[t] = tup
     end
     return execution_groups, execution_groups_map
 end

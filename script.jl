@@ -4,7 +4,10 @@ using Distributed
 using SMTPClient
 
 # procids = addprocs([("ubuntu@ec2-174-129-50-22.compute-1.amazonaws.com:22", 1)], sshflags=`-vvv -o StrictHostKeyChecking=no -i "/Users/pedroferraz/Desktop/acmust_lamps.pem"`, tunnel=true, exename="/home/ubuntu/julia-1.6.5/bin/julia", exeflags=["--project"], dir="/home/ubuntu/PMParallelRoutine/", max_parallel=100)
-ssh -i /Users/pedroferraz/Desktop/acmust_lamps.pem ubuntu@ec2-54-227-67-130.compute-1.amazonaws.com
+# ssh -i /Users/pedroferraz/Desktop/acmust_lamps.pem ubuntu@ec2-54-227-9-195.compute-1.amazonaws.com
+# scp /Users/pedroferraz/Desktop/acmust_lamps.pem ubuntu@ec2-54-227-9-195.compute-1.amazonaws.com:~/acmust_lamps.pem
+
+# addprocs([("ubuntu@ec2-3-95-196-126.compute-1.amazonaws.com:22", 1)], sshflags=`-vvv -o StrictHostKeyChecking=no -i "/Users/pedroferraz/Desktop/acmust_lamps.pem"`, tunnel=true, exename="/home/ubuntu/julia-1.6.5/bin/julia", exeflags=["--project"], dir="/home/ubuntu/PMParallelRoutine/", max_parallel=100)
 
 # @everywhere procids begin
 #     using Pkg
@@ -138,8 +141,8 @@ function create_input_data(instance; ts_range=nothing, scen_range=nothing)
 end
 
 function run_test(input_data)
-    (connection_points, all_flowtimes), time = @timed evaluate_pf_scenarios(input_data)
-    return connection_points, all_flowtimes, time
+    (connection_points, all_flowtimes, data_movement_processing_overhead_dict), time = @timed evaluate_pf_scenarios(input_data)
+    return connection_points, all_flowtimes, data_movement_processing_overhead_dict, time
 end
 
 function run_study(study_name, machine_ids, input_data)
@@ -147,16 +150,16 @@ function run_study(study_name, machine_ids, input_data)
 
     results = Dict()
     for i in 1:36
-        procids = addprocs([(machine_ids[i % length(machine_ids) + 1], 1)], sshflags=`-vvv -o StrictHostKeyChecking=no -i "home/ischavarry/Dropbox/Prainha/acmust_lamps.pem"`, tunnel=true, exename="/home/ubuntu/julia-1.6.5/bin/julia", exeflags=["--project"], dir="/home/ubuntu/PMParallelRoutine/", max_parallel=100)
+        procids = addprocs([(machine_ids[i % length(machine_ids) + 1], 1)], sshflags=`-vvv -o StrictHostKeyChecking=no -i "~/acmust_lamps.pem"`, tunnel=true, exename="/home/ubuntu/julia-1.6.5/bin/julia", exeflags=["--project"], dir="/home/ubuntu/PMParallelRoutine/", max_parallel=100)
         procids = workers()
         @everywhere procids begin
             include("src/PowerModelsParallelRoutine.jl")
         end
         include("script_functions.jl")
-
+        
         ######### Define PowerModels Parameters ###############
         @everywhere PowerModelsParallelRoutine.NetworkSimulations.PowerModels.silence() 
-        
+
         if i == 3
             lv0_parallel_strategy = build_parallel_strategy(scen = 1) # 1 grupo
             lv1_parallel_strategy = build_parallel_strategy(doy = 12) # (36/12) = 3 grupos
@@ -188,7 +191,7 @@ function run_study(study_name, machine_ids, input_data)
             # lv0_parallel_strategy = build_parallel_strategy() # 1 grupos
             # lv1_parallel_strategy = build_parallel_strategy(doy = 3, scen = 2)  # (36/3 * 4/2) = 24 grupos
         elseif i == 36
-            lv0_parallel_strategy = build_parallel_strategy(scen = 1) # 1 grupos
+            lv0_parallel_strategy = build_parallel_strategy(scen = -1) # 1 grupos
             lv1_parallel_strategy = build_parallel_strategy(doy = 1)  # (36/1) = 36 grupos
         elseif i < 36
             continue
@@ -198,12 +201,12 @@ function run_study(study_name, machine_ids, input_data)
         study_input_data["parallel_strategy"]["lv0"] = lv0_parallel_strategy
         study_input_data["parallel_strategy"]["lv1"] = lv1_parallel_strategy
 
-        connection_points, all_flowtimes, time = run_test(study_input_data)
-        results["$(nworkers())_workers"] = Dict("flow_times" => all_flowtimes, "total_time" => time, "connection_points" => connection_points)
+        connection_points, all_flowtimes, data_movement_processing_overhead_dict, time = run_test(study_input_data)
+        results["$(nworkers())_workers"] = Dict("flow_times" => all_flowtimes, "data_movement_processing_overhead" => data_movement_processing_overhead_dict, "total_time" => time, "connection_points" => connection_points)
 
         file_name = "$(study_name)_$i.json"
         PowerModelsParallelRoutine.write_json(file_name, results)
-        send_mail(file_name, "Atualização $(study_name): iteração $i")
+        # send_mail(file_name, "Atualização $(study_name): iteração $i")
     end
 end
 
@@ -211,7 +214,7 @@ function run_sequential_study(study_name, machine_ids, input_data)
     study_input_data = deepcopy(input_data)
     results = Dict()
 
-    procids = addprocs([(machine_ids[1], 1)], sshflags=`-vvv -i "home/ischavarry/Dropbox/Prainha/acmust_lamps.pem"`, tunnel=true, exename="/home/ubuntu/julia-1.6.5/bin/julia", exeflags=["--project"], dir="/home/ubuntu/PMParallelRoutine/", max_parallel=100)
+    procids = addprocs([(machine_ids[1], 1)], sshflags=`-vvv -i "/Users/pedroferraz/Desktop/acmust_lamps.pem"`, tunnel=true, exename="/home/ubuntu/julia-1.6.5/bin/julia", exeflags=["--project"], dir="/home/ubuntu/PMParallelRoutine/", max_parallel=100)
     procids = workers()
     @everywhere procids begin
         include("src/PowerModelsParallelRoutine.jl")
@@ -232,48 +235,56 @@ function run_sequential_study(study_name, machine_ids, input_data)
     send_mail(file_name, "Estudo sequencial: $(study_name)")    
 end
 
-############################### Quarto teste ###############################
+############################### Quinto teste ###############################
+# input_data = create_input_data("level 1")
+# run_sequential_study("Sequencial c6i.large", ["ubuntu@ec2-3-95-196-126.compute-1.amazonaws.com:22"], input_data)
+# rmprocs(workers())
 
- rmprocs(workers())
-input_data = create_input_data("level 4", ts_range=1:24*36, scen_range=1:4)
+# input_data = create_input_data("level 4", ts_range=1:24*36, scen_range=1:4)
+input_data = create_input_data("tutorial")
+lv0_parallel_strategy = build_parallel_strategy(scen = 1) # 2 grupos
+lv1_parallel_strategy = build_parallel_strategy(h = 1)  # (61/31) = 2 grupos
+input_data["parallel_strategy"]["lv0"] = lv0_parallel_strategy
+input_data["parallel_strategy"]["lv1"] = lv1_parallel_strategy
+
 try
     run_study("Parallel c6i.large", [
-        "ubuntu@ec2-3-95-196-126.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-237-202-131.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-242-158-218.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-89-174-124.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-83-111-245.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-198-26-77.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-145-40-187.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-91-72-198.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-226-107-115.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-23-20-156-5.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-3-90-201-104.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-164-5-149.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-3-84-185-146.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-75-101-211-0.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-52-23-197-69.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-34-227-192-72.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-147-209-218.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-84-72-53.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-204-105-86.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-160-131-158.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-107-22-150-92.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-234-73-236.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-18-212-240-124.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-34-202-236-201.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-18-212-102-125.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-80-191-25.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-18-212-203-120.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-3-85-97-221.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-34-229-138-202.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-52-91-93-149.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-242-175-174.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-221-83-45.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-237-195-143.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-75-101-180-231.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-83-93-101.compute-1.amazonaws.com:22",
-        "ubuntu@ec2-54-160-225-163.compute-1.amazonaws.com:22"
+        "ubuntu@ec2-54-234-199-141.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-34-229-217-17.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-208-207-72.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-196-246-190.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-52-201-255-45.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-145-244-135.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-82-62-167.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-165-99-115.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-227-182-148.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-209-195-91.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-100-26-22-169.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-91-32-247.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-107-20-73-32.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-184-73-135-210.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-166-67-18.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-3-90-225-249.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-18-215-174-69.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-208-3-4.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-18-209-70-162.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-146-31-16.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-18-207-123-78.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-221-147-33.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-52-91-243-6.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-236-95-97.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-3-208-13-107.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-107-22-37-145.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-3-87-238-6.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-159-15-236.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-34-227-71-192.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-146-205-98.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-196-170-227.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-34-203-234-29.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-234-127-179.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-3-88-184-53.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-3-85-112-224.compute-1.amazonaws.com:22",
+        "ubuntu@ec2-54-87-118-119.compute-1.amazonaws.com:22"
     ], input_data)
 catch e
     if isdefined(e, :msg)
@@ -284,10 +295,21 @@ catch e
 end
 ##############################################################################
 
+using JSON, StatsBase, Plots, Plots.PlotMeasures, StatsPlots
+read_json(file::String) = JSON.parse(String(read(file)))
+
 results_4xlarge = read_json("Parallel c6i.4xlarge_36.json")
 results_2xlarge = read_json("Parallel c6i.2xlarge_36.json")
 results_xlarge = read_json("Parallel c6i.xlarge_36.json")
+results_large = read_json("Parallel c6i.large_36.json")
+results_large2 = read_json("Parallel c6i.large_36_new.json")
 
+# seq_results_4xlarge = read_json("Sequencial c6i.4xlarge.json")
+# seq_results_2xlarge = read_json("Sequencial c6i.2xlarge.json")
+# seq_results_xlarge = read_json("Sequencial c6i.xlarge.json")
+# seq_results_large = read_json("Sequencial c6i.large.json")
+
+F = 24*36*4
 I = [3, 4, 6, 9, 12, 18, 36]
 times_4xlarge = [results_4xlarge["$(i)_workers"]["total_time"] for i in I]
 flow_times_4xlarge = [mean(results_4xlarge["$(i)_workers"]["flow_times"]) for i in I]
@@ -298,17 +320,124 @@ flow_times_2xlarge = [mean(results_2xlarge["$(i)_workers"]["flow_times"]) for i 
 times_xlarge = [results_xlarge["$(i)_workers"]["total_time"] for i in I]
 flow_times_xlarge = [mean(results_xlarge["$(i)_workers"]["flow_times"]) for i in I]
 
+times_large = [results_large["$(i)_workers"]["total_time"] for i in I]
+flow_times_large = [mean(results_large["$(i)_workers"]["flow_times"]) for i in I]
+
+times_large2 = [results_large2["$(i)_workers"]["total_time"] for i in I]
+flow_times_large2 = [mean(results_large2["$(i)_workers"]["flow_times"]) for i in I]
+
 dict_4xlarge = Dict("times" => times_4xlarge, "flow_times" => flow_times_4xlarge)
 dict_2xlarge = Dict("times" => times_2xlarge, "flow_times" => flow_times_2xlarge)
 dict_xlarge = Dict("times" => times_xlarge, "flow_times" => flow_times_xlarge)
+dict_large = Dict("times" => times_large, "flow_times" => flow_times_large)
+dict_large2 = Dict("times" => times_large2, "flow_times" => flow_times_large2)
 
-plot(I, dict_xlarge["times"], title="Tempo de execução (em segundos)", xlabel="Número de workers", label="12 xlarge")
-plot!(I, dict_2xlarge["times"], title="Tempo de execução (em segundos)", xlabel="Número de workers", label="6 2xlarge")
-plot!(I, dict_4xlarge["times"], title="Tempo de execução (em segundos)", xlabel="Número de workers", label="3 4xlarge")
+# speedup_xlarge = F * mean(seq_results_xlarge["1_workers"]["flow_times"]) ./ dict_xlarge["times"]
+# speedup_2xlarge = F * mean(seq_results_2xlarge["1_workers"]["flow_times"]) ./ dict_2xlarge["times"]
+# speedup_4xlarge = F * mean(seq_results_4xlarge["1_workers"]["flow_times"]) ./ dict_4xlarge["times"]
 
-plot(I, dict_xlarge["flow_times"], title="Tempo médio do fluxo de potência (em segundos)", xlabel="Número de workers", label="12 xlarge", legend=:bottomright)
-plot!(I, dict_2xlarge["flow_times"], title="Tempo médio do fluxo de potência (em segundos)", xlabel="Número de workers", label="6 2xlarge")
-plot!(I, dict_4xlarge["flow_times"], title="Tempo médio do fluxo de potência (em segundos)", xlabel="Número de workers", label="3 4xlarge")
+# I = [3, 4, 6, 9, 12, 18, 36]
+# plt = plot(I, speedup_xlarge[1:length(I)], title="Speedup", xlabel="Number of workers", label="12 x 4vCPU", linewidth=2, size=(1000, 600), legend=:topleft, legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+# plot!(I, speedup_2xlarge[1:length(I)], xlabel="Number of workers", label="6 x 8vCPU", linewidth=2)
+# plot!(I, speedup_4xlarge[1:length(I)], xlabel="Number of workers", label="3 x 16vCPU", linewidth=2)
+# scatter!(I, speedup_xlarge[1:length(I)], label="", color=1)
+# scatter!(I, speedup_2xlarge[1:length(I)], label="", color=2)
+# scatter!(I, speedup_4xlarge[1:length(I)], label="", color=3)
+# f(x) = x
+# plot!(f, linewidth=2, color=4, label="Ideal")
+# savefig(plt, "plots/speedup_36.png")
+
+# plt = plot(I, dict_large["times"], title="Execution time (in seconds)", xlabel="Number of workers",    label="36 x 2vCPU")
+plot(I, dict_xlarge["times"], title="Execution time (in seconds)", xlabel="Number of workers", label="12 x 4vCPU", linewidth=2, size=(1000, 600), legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+plot!(I, dict_2xlarge["times"], xlabel="Number of workers", label="6 x 8vCPU", linewidth=2)
+plot!(I, dict_4xlarge["times"], xlabel="Number of workers", label="3 x 16vCPU", linewidth=2)
+plot!(I, dict_large2["times"], label="36 x 2vCPU (new)", linewidth=2)
+scatter!(I, dict_xlarge["times"], label="", color=1)
+scatter!(I, dict_2xlarge["times"], label="", color=2)
+scatter!(I, dict_4xlarge["times"], label="", color=3)
+scatter!(I, dict_large2["times"], label="", color=4)
+savefig(plt, "plots/execution_time_new.png")
+
+plt = plot(I, dict_xlarge["flow_times"], label="12 x 4vCPU",  linewidth=2, color=1, title="Mean power flow execution time (in seconds)", xlabel="Number of workers", legend=:topleft, size=(1000, 600), legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+plot!(I, dict_2xlarge["flow_times"], label="6 x 8vCPU", linewidth=2, color=2)
+plot!(I, dict_4xlarge["flow_times"], label="3 x 16vCPU", linewidth=2, color=3)
+plot!(I, dict_large["flow_times"], label="36 x 2vCPU", linewidth=2, color=4)
+plot!(I, dict_large2["flow_times"], label="36 x 2vCPU (new)", linewidth=2, color=5)
+scatter!(I, dict_xlarge["flow_times"], label="", color=1)
+scatter!(I, dict_4xlarge["flow_times"], label="", color=3)
+scatter!(I, dict_2xlarge["flow_times"], label="", color=2)
+scatter!(I, dict_large["flow_times"], label="", color=4)
+scatter!(I, dict_large2["flow_times"], label="", color=5)
+savefig(plt, "plots/flow_times_new.png")
+
+# plt = plot(I,    [dict_xlarge["flow_times"][i]  / w for (i, w) in enumerate(I)], label="12 x 4vCPU", linewidth=2, color=1, title="Equivalent sequential power flow execution time (in seconds)", xlabel="Number of workers", legend=:topright, size=(1000, 600), legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+# plot!(I,    [dict_2xlarge["flow_times"][i] / w for (i, w) in enumerate(I)], label="6 x 8vCPU", linewidth=2, color=2)
+# plot!(I,    [dict_4xlarge["flow_times"][i] / w for (i, w) in enumerate(I)], label="3 x 16vCPU", linewidth=2, color=3)
+# plot!( I,    [dict_large["flow_times"][i]   / w for (i, w) in enumerate(I)], label="36 x 2vCPU", linewidth=2, color=4)
+# scatter!(I, [dict_xlarge["flow_times"][i]  / w for (i, w) in enumerate(I)], label="", color=1)
+# scatter!(I, [dict_2xlarge["flow_times"][i] / w for (i, w) in enumerate(I)], label="", color=2)
+# scatter!(I, [dict_4xlarge["flow_times"][i] / w for (i, w) in enumerate(I)], label="", color=3)
+# scatter!(I, [dict_large["flow_times"][i]   / w for (i, w) in enumerate(I)], label="", color=4)
+# savefig(plt, "plots/equivalent_sequential_time_2.png")
+
+plt = plot(I,  (dict_xlarge["times"]) .- sum(dict_xlarge["flow_times"]), title="Data movement, processing and overhead (in seconds)", linewidth=2, xlabel="Number of workers", label="12 x 4vCPU", legend=:topright, size=(1000, 600), legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+plot!(I, (dict_2xlarge["times"]) .- sum(dict_2xlarge["flow_times"]), linewidth=2, label="6 x 8vCPU", legend=:bottomright)
+plot!(I, (dict_4xlarge["times"]) .- sum(dict_4xlarge["flow_times"]), linewidth=2, label="3 x 16vCPU")
+plot!(I, (dict_large2["times"]) .- sum(dict_large2["flow_times"]), linewidth=2, label="36 x 2vCPU", legend=:outerright)
+savefig(plt, "plots/data_movement_processing_and_overhead_time_new2.png")
+
+plt = plot(I, [dict_xlarge["flow_times"][i]  / w for (i, w) in enumerate(I)], label="Power flow", linewidth=2, color=1, title="Time spent - 12 x 4vCPU", xlabel="Number of workers", legend=:topright, size=(1000, 600), legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+plot!(I, (dict_xlarge["times"] / F) .- ([dict_xlarge["flow_times"][i]  / w for (i, w) in enumerate(I)]), linewidth=2, xlabel="Number of workers", label="Data movement", legend=:topright, size=(1000, 600), legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+plot!(I, (dict_xlarge["times"] / F), linewidth=2, xlabel="Number of workers", label="Total time", legend=:topright, size=(1000, 600), legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+scatter!(I, [dict_xlarge["flow_times"][i]  / w for (i, w) in enumerate(I)], label="", color=1)
+scatter!(I, (dict_xlarge["times"] / F) .- ([dict_xlarge["flow_times"][i]  / w for (i, w) in enumerate(I)]), label="", color=2)
+scatter!(I, (dict_xlarge["times"] / F), label="", color=3)
+savefig(plt, "plots/power_flow_vs_data_movement1.png")
+
+plt = plot(I, [dict_2xlarge["flow_times"][i]  / w for (i, w) in enumerate(I)], label="Power flow", linewidth=2, color=1, title="Time spent - 6 x 8vCPU", xlabel="Number of workers", legend=:topright, size=(1000, 600), legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+plot!(I, (dict_2xlarge["times"] / F) .- ([dict_2xlarge["flow_times"][i]  / w for (i, w) in enumerate(I)]), linewidth=2, xlabel="Number of workers", label="Data movement", legend=:topright, size=(1000, 600), legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+plot!(I, (dict_2xlarge["times"] / F), linewidth=2, xlabel="Number of workers", label="Total time", legend=:topright, size=(1000, 600), legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+scatter!(I, [dict_2xlarge["flow_times"][i]  / w for (i, w) in enumerate(I)], label="", color=1)
+scatter!(I, (dict_2xlarge["times"] / F) .- ([dict_2xlarge["flow_times"][i]  / w for (i, w) in enumerate(I)]), label="", color=2)
+scatter!(I, (dict_2xlarge["times"] / F), label="", color=3)
+savefig(plt, "plots/power_flow_vs_data_movement2.png")
+
+plt = plot(I, [dict_4xlarge["flow_times"][i]  / w for (i, w) in enumerate(I)], label="Power flow", linewidth=2, color=1, title="Time spent - 3 x 16vCPU", xlabel="Number of workers", legend=:topright, size=(1000, 600), legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+plot!(I, (dict_4xlarge["times"] / F) .- ([dict_4xlarge["flow_times"][i]  / w for (i, w) in enumerate(I)]), linewidth=2, xlabel="Number of workers", label="Data movement", legend=:topright, size=(1000, 600), legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+plot!(I, (dict_4xlarge["times"] / F), linewidth=2, xlabel="Number of workers", label="Total time", legend=:topright, size=(1000, 600), legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+scatter!(I, [dict_4xlarge["flow_times"][i]  / w for (i, w) in enumerate(I)], label="", color=1)
+scatter!(I, (dict_4xlarge["times"] / F) .- ([dict_4xlarge["flow_times"][i]  / w for (i, w) in enumerate(I)]), label="", color=2)
+scatter!(I, (dict_4xlarge["times"] / F), label="", color=3)
+savefig(plt, "plots/power_flow_vs_data_movement3.png")
+
+plt = plot(I, [dict_large2["flow_times"][i]  / w for (i, w) in enumerate(I)], label="Power flow", linewidth=2, color=1, title="Time spent - 36 x 2vCPU", xlabel="Number of workers", legend=:topright, size=(1000, 600), legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+plot!(I, (dict_large2["times"] / F) .- ([dict_large2["flow_times"][i]  / w for (i, w) in enumerate(I)]), linewidth=2, xlabel="Number of workers", label="Data movement", legend=:topright, size=(1000, 600), legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+plot!(I, (dict_large2["times"] / F), linewidth=2, xlabel="Number of workers", label="Total time", legend=:topright, size=(1000, 600), legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+scatter!(I, [dict_large2["flow_times"][i]  / w for (i, w) in enumerate(I)], label="", color=1)
+scatter!(I, (dict_large2["times"] / F) .- ([dict_large2["flow_times"][i]  / w for (i, w) in enumerate(I)]), label="", color=2)
+scatter!(I, (dict_large2["times"] / F), label="", color=3)
+savefig(plt, "plots/power_flow_vs_data_movement4.png")
+
+p1_xlarge = ([dict_xlarge["flow_times"][i]  / w for (i, w) in enumerate(I)]) ./ (dict_xlarge["times"] / F)
+p2_xlarge = 1 .- p1_xlarge
+p1_2xlarge = ([dict_2xlarge["flow_times"][i]  / w for (i, w) in enumerate(I)]) ./ (dict_2xlarge["times"] / F)
+p2_2xlarge = 1 .- p1_2xlarge
+p1_4xlarge = ([dict_4xlarge["flow_times"][i]  / w for (i, w) in enumerate(I)]) ./ (dict_4xlarge["times"] / F)
+p2_4xlarge = 1 .- p1_4xlarge
+p1_large2 = ([dict_large2["flow_times"][i]  / w for (i, w) in enumerate(I)]) ./ (dict_large2["times"] / F)
+p2_large2 = 1 .- p1_large2
+plt = groupedbar(I, hcat(p1_xlarge, p2_xlarge), bar_position=:stack, xlabel="Number of workers", title="Proportion of execution time - 12 x 4vCPU", label=["Power flow" "Data movement"], bar_width=1, legend=:outertop, size=(1000, 600), legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+savefig(plt, "plots/proportion_time_1.png")
+
+plt = groupedbar(I, hcat(p1_2xlarge, p2_2xlarge), bar_position=:stack, xlabel="Number of workers", title="Proportion of execution time - 6 x 8vCPU", label=["Power flow" "Data movement"], bar_width=1, legend=:outertop, size=(1000, 600), legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+savefig(plt, "plots/proportion_time_2.png")
+
+plt = groupedbar(I, hcat(p1_4xlarge, p2_4xlarge), bar_position=:stack, xlabel="Number of workers", title="Proportion of execution time - 3 x 16vCPU", label=["Power flow" "Data movement"], bar_width=1, legend=:outertop, size=(1000, 600), legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+savefig(plt, "plots/proportion_time_3.png")
+
+plt = groupedbar(I, hcat(p1_large2, p2_large2), bar_position=:stack, xlabel="Number of workers", title="Proportion of execution time - 36 x 2vCPU", label=["Power flow" "Data movement"], bar_width=1, legend=:outertop, size=(1000, 600), legendfontsize=20, xtickfontsize = 20, ytickfontsize = 20, titlefontsize = 20, labelfontsize=20, left_margin = 5mm, bottom_margin=6mm, xticks=I)
+savefig(plt, "plots/proportion_time_4.png")
+
 
 # using GLM, DataFrames
 # data = DataFrame(X=collect(1:16), Y=Float64.(dict["flow_times"]))
